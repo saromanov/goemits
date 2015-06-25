@@ -1,7 +1,7 @@
 package goemits
 
 import (
-	//"fmt"
+	"fmt"
 	"gopkg.in/redis.v3"
 	"sync"
 	"time"
@@ -9,12 +9,13 @@ import (
 
 //Goemits provides main structure
 type Goemits struct {
-	client    *redis.Client
-	subclient *redis.PubSub
-	listeners []string
-	handlers  map[string]func(string)
-	isrunning bool
-	syncdata  *sync.Mutex
+	client       *redis.Client
+	subclient    *redis.PubSub
+	listeners    []string
+	handlers     map[string]func(string)
+	isrunning    bool
+	maxlisteners int
+	syncdata     *sync.Mutex
 }
 
 //Init provides initialization of Goemis
@@ -32,6 +33,11 @@ func Init() *Goemits {
 func (ge *Goemits) AddListener(listener string) {
 	ge.listeners = append(ge.listeners, listener)
 
+}
+
+//SetMaxListeners provides limitiation of amount of listeners
+func (ge *Goemits) SetMaxListeners(num int) {
+	ge.maxlisteners = num
 }
 
 //RemoveListener from store and unsubscribe from "listener" channel
@@ -52,6 +58,10 @@ func (ge *Goemits) Emit(event, message string) {
 }
 
 func (ge *Goemits) On(event string, f func(string)) {
+	liscount := len(ge.handlers)
+	if liscount > 0 && liscount == ge.maxlisteners {
+		fmt.Println("Can't add new listener, cause limit of listeners")
+	}
 	ge.handlers[event] = f
 	ge.subscribe(event)
 }
