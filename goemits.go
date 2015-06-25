@@ -1,29 +1,25 @@
 package goemits
 
 import (
-	"github.com/fzzy/radix/extra/pubsub"
-	"github.com/fzzy/radix/redis"
-	"time"
-	"sync"
 	//"fmt"
+	"gopkg.in/redis.v3"
+	"sync"
+	"time"
 )
 
 type Goemits struct {
 	client    *redis.Client
-	subclient *redis.Client
-	pubs      *pubsub.SubClient
+	subclient *redis.PubSub
 	listeners []string
 	handlers  map[string]func(string)
 	isrunning bool
-	syncdata* sync.Mutex
-
+	syncdata  *sync.Mutex
 }
 
 func Init() *Goemits {
 	ge := new(Goemits)
 	ge.client = initRedis()
-	ge.subclient = initRedis()
-	ge.pubs = pubsub.NewSubClient(ge.subclient)
+	ge.subclient = initRedis().PubSub()
 	ge.handlers = map[string]func(string){}
 	ge.isrunning = true
 	ge.syncdata = &sync.Mutex{}
@@ -36,13 +32,15 @@ func (ge *Goemits) AddListener(listener string) {
 }
 
 func (ge *Goemits) Emit(event, message string) {
-	ge.client.Cmd("publish", event, message)
+	err := ge.client.Publish(event, message).Err()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (ge *Goemits) On(event string, f func(string)) {
 	ge.handlers[event] = f
 	ge.subscribe(event)
-	go ge.startMessagesLoop()
 }
 
 func (ge *Goemits) Quit() {
@@ -50,37 +48,43 @@ func (ge *Goemits) Quit() {
 }
 
 func initRedis() *redis.Client {
-	client, err := redis.DialTimeout("tcp", "127.0.0.1:6379", time.Duration(10)*time.Second)
+	return redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+}
+
+func (ge *Goemits) receiveMessages() (interface{}, error) {
+	return ge.subclient.ReceiveTimeout(100 * time.Millisecond)
+}
+
+func (ge *Goemits) subscribe(event string) {
+	err := ge.subclient.Subscribe(event)
 	if err != nil {
-		panic("Can't initialize redis client")
-	}
-	return client
-}
-
-func (ge *Goemits) receiveMessages() *pubsub.SubReply {
-	return ge.pubs.Receive()
-}
-
-func (ge* Goemits) subscribe(event string){
-	sr := ge.pubs.Subscribe(event)
-	if sr.Err != nil {
-		panic(sr.Err)
+		panic(err)
 	}
 }
 
 func (ge *Goemits) startMessagesLoop() {
 	for {
-			reply := ge.receiveMessages()
-			if reply.Type != 0 {
-				hand, ok := ge.handlers[reply.Channel]
-				if ok {
-					hand(reply.Message)
-				}
+		msgi, err := ge.receiveMessages()
+		if err != nil {
+			//panic(err)
+		}
+		switch msg := msgi.(type) {
+		case *redis.Message:
+			hand, ok := ge.handlers[msg.Channel]
+			if ok {
+				hand(msg.Payload)
 			}
+		}
 	}
 }
 
 func (ge *Goemits) StartLoop() {
+	go ge.startMessagesLoop()
+	defer ge.subclient.Close()
 	for {
 		if !ge.isrunning {
 			break
