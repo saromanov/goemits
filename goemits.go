@@ -105,7 +105,7 @@ func (ge *Goemits) startMessagesLoop() {
 	}
 }
 
-func (ge *Goemits) StartLoop() {
+func (ge *Goemits) Start() {
 	go ge.startMessagesLoop()
 	defer ge.subclient.Close()
 	for {
