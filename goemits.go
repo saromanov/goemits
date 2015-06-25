@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+//Goemits provides main structure
 type Goemits struct {
 	client    *redis.Client
 	subclient *redis.PubSub
@@ -16,6 +17,8 @@ type Goemits struct {
 	syncdata  *sync.Mutex
 }
 
+//Init provides initialization of Goemis
+//This should call in the first place
 func Init() *Goemits {
 	ge := new(Goemits)
 	ge.client = initRedis()
@@ -31,6 +34,7 @@ func (ge *Goemits) AddListener(listener string) {
 
 }
 
+//RemoveListener from store and unsubscribe from "listener" channel
 func (ge *Goemits) RemoveListener(listener string) {
 	_, ok := ge.handlers[listener]
 	if ok {
@@ -39,6 +43,7 @@ func (ge *Goemits) RemoveListener(listener string) {
 	}
 }
 
+//Emit event
 func (ge *Goemits) Emit(event, message string) {
 	err := ge.client.Publish(event, message).Err()
 	if err != nil {
