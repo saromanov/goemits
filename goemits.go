@@ -20,10 +20,10 @@ type Goemits struct {
 
 //Init provides initialization of Goemis
 //This should call in the first place
-func Init() *Goemits {
+func Init(addr string) *Goemits {
 	ge := new(Goemits)
-	ge.client = initRedis()
-	ge.subclient = initRedis().PubSub()
+	ge.client = initRedis(addr)
+	ge.subclient = initRedis(addr).PubSub()
 	ge.handlers = map[string]func(string){}
 	ge.isrunning = true
 	ge.syncdata = &sync.Mutex{}
@@ -59,7 +59,7 @@ func (ge *Goemits) Emit(event, message string) {
 
 func (ge *Goemits) On(event string, f func(string)) {
 	liscount := len(ge.handlers)
-	if liscount > 0 && liscount == ge.maxlisteners {
+	if liscount > 0 &&  liscount == ge.maxlisteners {
 		fmt.Println("Can't add new listener, cause limit of listeners")
 	}
 	ge.handlers[event] = f
@@ -70,9 +70,9 @@ func (ge *Goemits) Quit() {
 	ge.isrunning = false
 }
 
-func initRedis() *redis.Client {
+func initRedis(addr string) *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     addr,
 		Password: "",
 		DB:       0,
 	})
