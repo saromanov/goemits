@@ -31,6 +31,14 @@ func (ge *Goemits) AddListener(listener string) {
 
 }
 
+func (ge *Goemits) RemoveListener(listener string) {
+	_, ok := ge.handlers[listener]
+	if ok {
+		delete(ge.handlers, listener)
+		ge.subclient.Unsubscribe(listener)
+	}
+}
+
 func (ge *Goemits) Emit(event, message string) {
 	err := ge.client.Publish(event, message).Err()
 	if err != nil {
