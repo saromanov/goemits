@@ -50,6 +50,12 @@ func (ge *Goemits) RemoveListener(listener string) {
 	}
 }
 
+func (ge *Goemits) RemoveListeners(listeners []string) {
+	for _, listener := range listeners {
+		ge.RemoveListener(listener)
+	}
+}
+
 //Emit event
 func (ge *Goemits) Emit(event, message string) {
 	err := ge.client.Publish(event, message).Err()
