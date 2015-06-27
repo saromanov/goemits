@@ -23,6 +23,21 @@ func main() {
 		fmt.Println("Disconnect")
 		emit.Quit()
 	})
+
+	emit.OnAny(func(message string){
+		//This get any events
+	})
 	emit.StartLoop()
 }
 ```
+
+# API
+
+## emit.AddListener(listener string)
+add new listener
+
+## emit.On(event, message string)
+
+## emit.OnAny(message string)
+
+## emit.SetMaxListeners(num int)
