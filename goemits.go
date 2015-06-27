@@ -14,6 +14,7 @@ type Goemits struct {
 	listeners    []string
 	handlers     map[string]func(string)
 	isrunning    bool
+	anylistener  bool
 	maxlisteners int
 	syncdata     *sync.Mutex
 }
@@ -59,11 +60,16 @@ func (ge *Goemits) Emit(event, message string) {
 
 func (ge *Goemits) On(event string, f func(string)) {
 	liscount := len(ge.handlers)
-	if liscount > 0 &&  liscount == ge.maxlisteners {
+	if liscount > 0 && liscount == ge.maxlisteners {
 		fmt.Println("Can't add new listener, cause limit of listeners")
 	}
 	ge.handlers[event] = f
 	ge.subscribe(event)
+}
+
+func (ge *Goemits) OnAny(f func(string)) {
+	ge.handlers["_any"] = f
+	ge.anylistener = true
 }
 
 func (ge *Goemits) Quit() {
@@ -100,6 +106,11 @@ func (ge *Goemits) startMessagesLoop() {
 			hand, ok := ge.handlers[msg.Channel]
 			if ok {
 				hand(msg.Payload)
+			}
+
+			if ge.anylistener {
+				handfunc, _ := ge.handlers["_any"]
+				handfunc(msg.Payload)
 			}
 		}
 	}
