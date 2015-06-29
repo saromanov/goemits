@@ -124,10 +124,13 @@ func initRedis(addr string) *redis.Client {
 	})
 }
 
+//This method gets messages from redis
 func (ge *Goemits) receiveMessages() (interface{}, error) {
 	return ge.subclient.ReceiveTimeout(100 * time.Millisecond)
 }
 
+
+//Subscribe to another event
 func (ge *Goemits) subscribe(event string) {
 	err := ge.subclient.Subscribe(event)
 	if err != nil {
