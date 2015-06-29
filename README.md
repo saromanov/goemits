@@ -43,6 +43,12 @@ add new listener
 ## emit.OnAny(message string)
 getting messages from all listeners
 
+## emit.Emit(listener string, message string)
+Fire message to listener
+
+## emit.EmitMany(listeners []stirng, message string)
+Fire message to list of listeners
+
 ## emit.EmitAll(message)
 Fire message to all of listeners
 
