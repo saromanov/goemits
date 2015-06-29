@@ -50,6 +50,8 @@ func (ge *Goemits) RemoveListener(listener string) {
 	}
 }
 
+
+//RemoveListeners from the base
 func (ge *Goemits) RemoveListeners(listeners []string) {
 	for _, listener := range listeners {
 		ge.RemoveListener(listener)
@@ -64,6 +66,7 @@ func (ge *Goemits) Emit(event, message string) {
 	}
 }
 
+//On provides subscribe to event
 func (ge *Goemits) On(event string, f func(string)) {
 	liscount := len(ge.handlers)
 	if liscount > 0 && liscount == ge.maxlisteners {
@@ -73,11 +76,14 @@ func (ge *Goemits) On(event string, f func(string)) {
 	ge.subscribe(event)
 }
 
+//OnAny provides catching any event
 func (ge *Goemits) OnAny(f func(string)) {
 	ge.handlers["_any"] = f
 	ge.anylistener = true
 }
 
+
+//Quit provides break up main loop
 func (ge *Goemits) Quit() {
 	ge.isrunning = false
 }
