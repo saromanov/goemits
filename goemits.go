@@ -85,8 +85,20 @@ func (ge *Goemits) RemoveListener(listener string) {
 	_, ok := ge.handlers[listener]
 	if ok {
 		delete(ge.handlers, listener)
+		idx := ge.findListener(listener)
+		ge.listeners = append(ge.listeners[:idx], ge.listeners[idx+1:]...)
 		ge.subclient.Unsubscribe(listener)
 	}
+}
+
+func (ge *Goemits) findListener(targlistener string) int {
+	res := -1
+	for i, listener := range ge.listeners {
+		if listener == targlistener {
+			return i
+		}
+	}
+	return res
 }
 
 //RemoveListeners from the base
