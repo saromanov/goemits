@@ -93,6 +93,28 @@ func TestEmitAll(t *testing.T) {
 	}
 }
 
+func TestMaxListeners(t *testing.T) {
+	emit := Init("localhost:6379")
+	emit.SetMaxListeners(2)
+	emit.On("foobar", func(mesage string){
+		size := len(emit.listeners)
+		if size != 2 {
+			t.Errorf("%d not match %d", size, 2)
+		}
+		emit.Quit()
+	})
+	emit.On("foobar2", func(mesage string){
+		
+	})
+	emit.On("foobar3", func(mesage string){
+		
+	})
+
+	emit.Emit("foobar", "A")
+	emit.Start()
+
+}
+
 func TestRemoveListener(t *testing.T) {
 	emit := Init("localhost:6379")
 	emit.On("foo", func(message string) {
