@@ -33,25 +33,24 @@ func Init(addr string) *Goemits {
 	return ge
 }
 
-//SetMaxListeners provides limitiation of amount of listeners
-func (ge *Goemits) SetMaxListeners(num int) {
-	ge.maxlisteners = num
-}
-
-//RemoveListener from store and unsubscribe from "listener" channel
-func (ge *Goemits) RemoveListener(listener string) {
-	_, ok := ge.handlers[listener]
-	if ok {
-		delete(ge.handlers, listener)
-		ge.subclient.Unsubscribe(listener)
+//On provides subscribe to event
+func (ge *Goemits) On(event string, f func(string)) {
+	liscount := len(ge.handlers)
+	if liscount > 0 && liscount == ge.maxlisteners {
+		fmt.Println("Can't add new listener, cause limit of listeners")
+	}
+	_, ok := ge.handlers[event]
+	if !ok {
+		ge.listeners = append(ge.listeners, event)
+		ge.handlers[event] = f
+		ge.subscribe(event)
 	}
 }
 
-//RemoveListeners from the base
-func (ge *Goemits) RemoveListeners(listeners []string) {
-	for _, listener := range listeners {
-		ge.RemoveListener(listener)
-	}
+//OnAny provides catching any event
+func (ge *Goemits) OnAny(f func(string)) {
+	ge.handlers["_any"] = f
+	ge.anylistener = true
 }
 
 //Emit event
@@ -76,24 +75,25 @@ func (ge *Goemits) EmitAll(message string) {
 	}
 }
 
-//On provides subscribe to event
-func (ge *Goemits) On(event string, f func(string)) {
-	liscount := len(ge.handlers)
-	if liscount > 0 && liscount == ge.maxlisteners {
-		fmt.Println("Can't add new listener, cause limit of listeners")
-	}
-	_, ok := ge.handlers[event]
-	if !ok {
-		ge.listeners = append(ge.listeners, event)
-		ge.handlers[event] = f
-		ge.subscribe(event)
+//SetMaxListeners provides limitiation of amount of listeners
+func (ge *Goemits) SetMaxListeners(num int) {
+	ge.maxlisteners = num
+}
+
+//RemoveListener from store and unsubscribe from "listener" channel
+func (ge *Goemits) RemoveListener(listener string) {
+	_, ok := ge.handlers[listener]
+	if ok {
+		delete(ge.handlers, listener)
+		ge.subclient.Unsubscribe(listener)
 	}
 }
 
-//OnAny provides catching any event
-func (ge *Goemits) OnAny(f func(string)) {
-	ge.handlers["_any"] = f
-	ge.anylistener = true
+//RemoveListeners from the base
+func (ge *Goemits) RemoveListeners(listeners []string) {
+	for _, listener := range listeners {
+		ge.RemoveListener(listener)
+	}
 }
 
 //Quit provides break up main loop
