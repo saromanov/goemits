@@ -62,6 +62,14 @@ func (ge *Goemits) Emit(event, message string) {
 	}
 }
 
+//EmitMany provides fire message to list of listeners
+func (ge *Goemits) EmitMany(events []string, message string) {
+	for _, listener := range events {
+		ge.Emit(listener, message)
+	}
+}
+
+//EmitAll provides fire message to all of listeners
 func (ge *Goemits) EmitAll(message string) {
 	for _, listener := range ge.listeners {
 		ge.Emit(listener, message)
@@ -133,6 +141,7 @@ func (ge *Goemits) startMessagesLoop() {
 	}
 }
 
+//Start provides beginning of catching messages
 func (ge *Goemits) Start() {
 	go ge.startMessagesLoop()
 	defer ge.subclient.Close()
