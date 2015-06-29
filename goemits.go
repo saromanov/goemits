@@ -9,7 +9,9 @@ import (
 
 //Goemits provides main structure
 type Goemits struct {
-	client       *redis.Client
+	//main client
+	client *redis.Client
+	//pubsub obecjt
 	subclient    *redis.PubSub
 	listeners    []string
 	handlers     map[string]func(string)
@@ -31,11 +33,6 @@ func Init(addr string) *Goemits {
 	return ge
 }
 
-func (ge *Goemits) AddListener(listener string) {
-	ge.listeners = append(ge.listeners, listener)
-
-}
-
 //SetMaxListeners provides limitiation of amount of listeners
 func (ge *Goemits) SetMaxListeners(num int) {
 	ge.maxlisteners = num
@@ -49,7 +46,6 @@ func (ge *Goemits) RemoveListener(listener string) {
 		ge.subclient.Unsubscribe(listener)
 	}
 }
-
 
 //RemoveListeners from the base
 func (ge *Goemits) RemoveListeners(listeners []string) {
@@ -72,8 +68,12 @@ func (ge *Goemits) On(event string, f func(string)) {
 	if liscount > 0 && liscount == ge.maxlisteners {
 		fmt.Println("Can't add new listener, cause limit of listeners")
 	}
-	ge.handlers[event] = f
-	ge.subscribe(event)
+	_, ok := ge.handlers[event]
+	if !ok {
+		ge.listeners = append(ge.listeners, event)
+		ge.handlers[event] = f
+		ge.subscribe(event)
+	}
 }
 
 //OnAny provides catching any event
@@ -81,7 +81,6 @@ func (ge *Goemits) OnAny(f func(string)) {
 	ge.handlers["_any"] = f
 	ge.anylistener = true
 }
-
 
 //Quit provides break up main loop
 func (ge *Goemits) Quit() {
