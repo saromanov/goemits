@@ -13,8 +13,11 @@ type Goemits struct {
 	client *redis.Client
 	//pubsub obecjt
 	subclient    *redis.PubSub
+	//all of listeners
 	listeners    []string
+	//triggers for events
 	handlers     map[string]func(string)
+	//check if goemits is running
 	isrunning    bool
 	anylistener  bool
 	maxlisteners int
