@@ -33,14 +33,12 @@ func main() {
 
 # API
 
-## emit.AddListener(listener string)
-add new listener
-
 ## emit.RemoveListsner(listener string)
 
 ## emit.RemoveListeners(listener []string)
 
 ## emit.On(event, message string)
+add new listener
 
 ## emit.OnAny(message string)
 
