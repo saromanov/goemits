@@ -1,5 +1,4 @@
-# goemits [![Build Status](https://travis-ci.org/saromanov/goemits.svg?branch=master)](https://travis-ci.org/saromanov/goemits)
-[![Coverage Status](https://coveralls.io/repos/saromanov/goemits/badge.svg?branch=master)](https://coveralls.io/r/saromanov/goemits?branch=master)
+# goemits [![Build Status](https://travis-ci.org/saromanov/goemits.svg?branch=master)](https://travis-ci.org/saromanov/goemits) [![Coverage Status](https://coveralls.io/repos/saromanov/goemits/badge.svg?branch=master)](https://coveralls.io/r/saromanov/goemits?branch=master)
 
 Event emitters based on pubsub in Redis.
 
