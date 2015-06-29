@@ -12,11 +12,11 @@ type Goemits struct {
 	//main client
 	client *redis.Client
 	//pubsub obecjt
-	subclient    *redis.PubSub
+	subclient *redis.PubSub
 	//all of listeners
-	listeners    []string
+	listeners []string
 	//triggers for events
-	handlers     map[string]func(string)
+	handlers map[string]func(string)
 	//check if goemits is running
 	isrunning    bool
 	anylistener  bool
@@ -41,12 +41,13 @@ func (ge *Goemits) On(event string, f func(string)) {
 	liscount := len(ge.handlers)
 	if liscount > 0 && liscount == ge.maxlisteners {
 		fmt.Println("Can't add new listener, cause limit of listeners")
-	}
-	_, ok := ge.handlers[event]
-	if !ok {
-		ge.listeners = append(ge.listeners, event)
-		ge.handlers[event] = f
-		ge.subscribe(event)
+	} else {
+		_, ok := ge.handlers[event]
+		if !ok {
+			ge.listeners = append(ge.listeners, event)
+			ge.handlers[event] = f
+			ge.subscribe(event)
+		}
 	}
 }
 
@@ -128,7 +129,6 @@ func initRedis(addr string) *redis.Client {
 func (ge *Goemits) receiveMessages() (interface{}, error) {
 	return ge.subclient.ReceiveTimeout(100 * time.Millisecond)
 }
-
 
 //Subscribe to another event
 func (ge *Goemits) subscribe(event string) {
