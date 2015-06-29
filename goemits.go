@@ -62,6 +62,12 @@ func (ge *Goemits) Emit(event, message string) {
 	}
 }
 
+func (ge *Goemits) EmitAll(message string) {
+	for _, listener := range ge.listeners {
+		ge.Emit(listener, message)
+	}
+}
+
 //On provides subscribe to event
 func (ge *Goemits) On(event string, f func(string)) {
 	liscount := len(ge.handlers)
