@@ -41,5 +41,7 @@ func main() {
 add new listener
 
 ## emit.OnAny(message string)
+getting messages from all listeners
 
 ## emit.SetMaxListeners(num int)
+set maximum number of listeners
