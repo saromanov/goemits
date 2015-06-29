@@ -1,7 +1,7 @@
-# goemits
+# goemits [![Build Status](https://travis-ci.org/saromanov/goemits.svg?branch=master)](https://travis-ci.org/saromanov/goemits)
 
-Experimental
-Work in progress
+Event emitters based on pubsub in Redis.
+
 
 ```go
 package main
