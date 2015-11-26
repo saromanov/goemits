@@ -39,7 +39,7 @@ func Init(addr string) *Goemits {
 //On provides subscribe to event
 func (ge *Goemits) On(event string, f func(string)) {
 	liscount := len(ge.handlers)
-	if liscount > 0 && liscount == ge.maxlisteners {
+	if ge.maxlisteners> 0  && liscount > 0 && liscount == ge.maxlisteners {
 		fmt.Println("Can't add new listener, cause limit of listeners")
 	} else {
 		_, ok := ge.handlers[event]
