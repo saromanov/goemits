@@ -58,11 +58,12 @@ func (ge *Goemits) OnAny(f func(string)) {
 }
 
 //Emit event
-func (ge *Goemits) Emit(event, message string) {
+func (ge *Goemits) Emit(event, message string) error {
 	err := ge.client.Publish(event, message).Err()
 	if err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
 //EmitMany provides fire message to list of listeners
@@ -114,6 +115,7 @@ func (ge *Goemits) RemoveListeners(listeners []string) {
 
 //Quit provides break up main loop
 func (ge *Goemits) Quit() {
+	ge.client.Close()
 	ge.isrunning = false
 }
 
