@@ -17,7 +17,7 @@ func TestRunning(t *testing.T) {
 }
 
 func TestEmitEvent(t *testing.T) {
-	res := Init("localhost:6380")
+	res := Init("localhost:6379")
 	value := ""
 	msg := "foobar"
 	res.On("test", func(message string) {
