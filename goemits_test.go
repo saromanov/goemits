@@ -13,19 +13,22 @@ func TestRunning(t *testing.T) {
 	if res.isrunning != true {
 		t.Errorf("Init is not started")
 	}
+	res.Quit()
 }
 
 func TestEmitEvent(t *testing.T) {
-	res := Init("localhost:6379")
+	res := Init("localhost:6380")
 	value := ""
 	msg := "foobar"
 	res.On("test", func(message string) {
 		value = message
 		res.Quit()
 	})
-	res.Emit("test", msg)
+	err := res.Emit("test", msg)
+	if err != nil {
+		t.Errorf("%v", err)
+	}
 	res.Start()
-
 	if value != msg {
 		t.Errorf("%s not match %s", value, msg)
 	}
@@ -35,7 +38,7 @@ func TestOnAny(t *testing.T) {
 	emit := Init("localhost:6379")
 	values := []string{}
 	emit.On("test.first", func(message string) {
-
+		emit.Quit()
 	})
 
 	emit.On("test.second", func(message string) {
@@ -46,8 +49,15 @@ func TestOnAny(t *testing.T) {
 		values = append(values, message)
 	})
 
-	emit.Emit("test.first", "foobar")
-	emit.Emit("test.second", "foobar")
+	var err error
+	err = emit.Emit("test.first", "foobar")
+	if err != nil {
+		t.Errorf("%v", err)
+	}
+	err = emit.Emit("test.second", "foobar")
+	if err != nil {
+		t.Errorf("%v", err)
+	}
 	emit.Start()
 
 	if len(values) != 2 {
