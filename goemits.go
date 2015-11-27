@@ -144,7 +144,7 @@ func (ge *Goemits) startMessagesLoop() {
 	for {
 		msgi, err := ge.receiveMessages()
 		if err != nil {
-			//panic(err)
+			return
 		}
 		switch msg := msgi.(type) {
 		case *redis.Message:
@@ -164,7 +164,6 @@ func (ge *Goemits) startMessagesLoop() {
 //Start provides beginning of catching messages
 func (ge *Goemits) Start() {
 	go ge.startMessagesLoop()
-	defer ge.subclient.Close()
 	for {
 		if !ge.isrunning {
 			break
