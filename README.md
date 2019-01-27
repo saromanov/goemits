@@ -9,29 +9,32 @@ Event emitters based on pubsub in Redis.
 ```go
 package main
 
-import
-(
-	"github.com/saromanov/goemits"
+import (
 	"fmt"
+
+	"github.com/saromanov/goemits"
 )
 
 func main() {
-	emit := goemits.Init()
-	emit.On("connect", func(message string){
+	emit := goemits.New(goemits.Config{
+		RedisAddress: "127.0.0.1:6379",
+	})
+	emit.On("connect", func(message string) {
 		fmt.Println("Found: ", message)
 		emit.Emit("disconnect", "data")
 	})
 
-	emit.On("disconnect", func(message string){
+	emit.On("disconnect", func(message string) {
 		fmt.Println("Disconnect")
 		emit.Quit()
 	})
 
-	emit.OnAny(func(message string){
+	emit.OnAny(func(message string) {
 		//This get any events
 	})
-	emit.StartLoop()
+	emit.Start()
 }
+
 ```
 
 # API
