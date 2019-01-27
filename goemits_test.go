@@ -5,19 +5,24 @@ import (
 )
 
 const (
-	msg = "foobar"
+	msg  = "foobar"
+	host = "127.0.0.1:6379"
 )
 
 func TestRunning(t *testing.T) {
-	res := Init("localhost:6379")
-	if res.isrunning != true {
+	res := New(Config{
+		RedisAddress: host,
+	})
+	if !res.isRunning {
 		t.Errorf("Init is not started")
 	}
 	res.Quit()
 }
 
 func TestEmitEvent(t *testing.T) {
-	res := Init("localhost:6379")
+	res := New(Config{
+		RedisAddress: host,
+	})
 	value := ""
 	msg := "foobar"
 	res.On("test", func(message string) {
@@ -35,7 +40,9 @@ func TestEmitEvent(t *testing.T) {
 }
 
 func TestOnAny(t *testing.T) {
-	emit := Init("localhost:6379")
+	emit := New(Config{
+		RedisAddress: host,
+	})
 	values := []string{}
 	emit.On("test.first", func(message string) {
 		emit.Quit()
@@ -66,7 +73,9 @@ func TestOnAny(t *testing.T) {
 }
 
 func TestEmitMany(t *testing.T) {
-	emit := Init("localhost:6379")
+	emit := New(Config{
+		RedisAddress: host,
+	})
 	values := []string{}
 	emit.On("test.first", func(message string) {
 		values = append(values, message)
@@ -85,7 +94,9 @@ func TestEmitMany(t *testing.T) {
 }
 
 func TestEmitAll(t *testing.T) {
-	emit := Init("localhost:6379")
+	emit := New(Config{
+		RedisAddress: host,
+	})
 	values := []string{}
 	emit.On("test.first", func(message string) {
 		values = append(values, message)
@@ -104,7 +115,9 @@ func TestEmitAll(t *testing.T) {
 }
 
 func TestMaxListeners(t *testing.T) {
-	emit := Init("localhost:6379")
+	emit := New(Config{
+		RedisAddress: host,
+	})
 	emit.SetMaxListeners(2)
 	emit.On("foobar", func(mesage string) {
 		size := len(emit.listeners)
@@ -126,7 +139,9 @@ func TestMaxListeners(t *testing.T) {
 }
 
 func TestRemoveListener(t *testing.T) {
-	emit := Init("localhost:6379")
+	emit := New(Config{
+		RedisAddress: host,
+	})
 	emit.On("foo", func(message string) {
 		emit.RemoveListener("foo")
 		emit.Quit()
@@ -140,7 +155,9 @@ func TestRemoveListener(t *testing.T) {
 }
 
 func TestRemoveListeners(t *testing.T) {
-	emit := Init("localhost:6379")
+	emit := New(Config{
+		RedisAddress: host,
+	})
 	emit.On("foo", func(message string) {
 		emit.RemoveListeners([]string{"foo", "value"})
 		emit.Quit()
@@ -155,13 +172,15 @@ func TestRemoveListeners(t *testing.T) {
 }
 
 func TestQuit(t *testing.T) {
-	emit := Init("localhost:6379")
+	emit := New(Config{
+		RedisAddress: host,
+	})
 	emit.On("foo", func(message string) {
 		emit.Quit()
 	})
 	emit.Emit("foo", "nn")
 	emit.Start()
-	if emit.isrunning {
-		t.Errorf("goemits must be stops")
+	if emit.isRunning {
+		t.Errorf("goemits must be stop")
 	}
 }
