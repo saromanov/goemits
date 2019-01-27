@@ -2,26 +2,28 @@ package goemits
 
 import (
 	"fmt"
-	"gopkg.in/redis.v3"
+	"log"
 	"sync"
 	"time"
+
+	"gopkg.in/redis.v3"
 )
 
 //Goemits provides main structure
 type Goemits struct {
 	//main client
 	client *redis.Client
-	//pubsub obecjt
+	//pubsub object
 	subclient *redis.PubSub
 	//all of listeners
 	listeners []string
 	//triggers for events
 	handlers map[string]func(string)
 	//check if goemits is running
-	isrunning    bool
-	anylistener  bool
-	maxlisteners int
-	syncdata     *sync.Mutex
+	isRunning    bool
+	anyListener  bool
+	maxListeners int
+	m            *sync.Mutex
 }
 
 //Init provides initialization of Goemis
@@ -31,37 +33,38 @@ func Init(addr string) *Goemits {
 	ge.client = initRedis(addr)
 	ge.subclient = initRedis(addr).PubSub()
 	ge.handlers = map[string]func(string){}
-	ge.isrunning = true
-	ge.syncdata = &sync.Mutex{}
+	ge.isRunning = true
+	ge.m = &sync.Mutex{}
 	return ge
 }
 
 //On provides subscribe to event
 func (ge *Goemits) On(event string, f func(string)) {
 	liscount := len(ge.handlers)
-	if ge.maxlisteners> 0  && liscount > 0 && liscount == ge.maxlisteners {
-		fmt.Println("Can't add new listener, cause limit of listeners")
-	} else {
-		_, ok := ge.handlers[event]
-		if !ok {
-			ge.listeners = append(ge.listeners, event)
-			ge.handlers[event] = f
-			ge.subscribe(event)
-		}
+	if ge.maxListeners > 0 && liscount > 0 && liscount == ge.maxListeners {
+		log.Println("Can't add new listener, cause limit of listeners")
+		return
 	}
+	_, ok := ge.handlers[event]
+	if ok {
+		return
+	}
+	ge.listeners = append(ge.listeners, event)
+	ge.handlers[event] = f
+	ge.subscribe(event)
 }
 
 //OnAny provides catching any event
 func (ge *Goemits) OnAny(f func(string)) {
 	ge.handlers["_any"] = f
-	ge.anylistener = true
+	ge.anyListener = true
 }
 
 //Emit event
 func (ge *Goemits) Emit(event, message string) error {
 	err := ge.client.Publish(event, message).Err()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to publish message: %v", err)
 	}
 	return nil
 }
@@ -82,18 +85,19 @@ func (ge *Goemits) EmitAll(message string) {
 
 //SetMaxListeners provides limitiation of amount of listeners
 func (ge *Goemits) SetMaxListeners(num int) {
-	ge.maxlisteners = num
+	ge.maxListeners = num
 }
 
 //RemoveListener from store and unsubscribe from "listener" channel
 func (ge *Goemits) RemoveListener(listener string) {
 	_, ok := ge.handlers[listener]
-	if ok {
-		delete(ge.handlers, listener)
-		idx := ge.findListener(listener)
-		ge.listeners = append(ge.listeners[:idx], ge.listeners[idx+1:]...)
-		ge.subclient.Unsubscribe(listener)
+	if !ok {
+		return
 	}
+	delete(ge.handlers, listener)
+	idx := ge.findListener(listener)
+	ge.listeners = append(ge.listeners[:idx], ge.listeners[idx+1:]...)
+	ge.subclient.Unsubscribe(listener)
 }
 
 func (ge *Goemits) findListener(targlistener string) int {
@@ -116,7 +120,7 @@ func (ge *Goemits) RemoveListeners(listeners []string) {
 //Quit provides break up main loop
 func (ge *Goemits) Quit() {
 	ge.client.Close()
-	ge.isrunning = false
+	ge.isRunning = false
 }
 
 func initRedis(addr string) *redis.Client {
@@ -148,14 +152,14 @@ func (ge *Goemits) startMessagesLoop() {
 		}
 		switch msg := msgi.(type) {
 		case *redis.Message:
-			hand, ok := ge.handlers[msg.Channel]
+			h, ok := ge.handlers[msg.Channel]
 			if ok {
-				hand(msg.Payload)
+				h(msg.Payload)
 			}
 
-			if ge.anylistener {
-				handfunc, _ := ge.handlers["_any"]
-				handfunc(msg.Payload)
+			if ge.anyListener {
+				h := ge.handlers["_any"]
+				h(msg.Payload)
 			}
 		}
 	}
@@ -165,7 +169,7 @@ func (ge *Goemits) startMessagesLoop() {
 func (ge *Goemits) Start() {
 	go ge.startMessagesLoop()
 	for {
-		if !ge.isrunning {
+		if !ge.isRunning {
 			break
 		}
 		time.Sleep(time.Millisecond * 10)

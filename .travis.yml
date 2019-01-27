@@ -1,8 +1,9 @@
 language: go
 
 go:
-  - 1.4
-  - 1.5
+  - 1.9
+  - "1.10"
+  - 1.11
   - tip
 
 services:
@@ -11,7 +12,8 @@ services:
 before_install:
   - go get "gopkg.in/redis.v3"
   - go get github.com/axw/gocov/gocov
+  - go get golang.org/x/tools/cmd/cover
   - go get github.com/mattn/goveralls
-  - if ! go get code.google.com/p/go.tools/cmd/cover; then go get golang.org/x/tools/cmd/cover; fi
 script:
-    - $HOME/gopath/bin/goveralls -service=travis-ci
+    - go test -v -covermode=count -coverprofile=coverage.out ./...
+  - goveralls -coverprofile=coverage.out -service travis-ci -repotoken GybrsAp4vyE2dcHAUF7sBfpKGlVNQh0Jr
