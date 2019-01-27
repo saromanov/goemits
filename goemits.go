@@ -26,12 +26,15 @@ type Goemits struct {
 	m            *sync.Mutex
 }
 
-//Init provides initialization of Goemis
+//New provides initialization of Goemis
 //This should call in the first place
-func Init(addr string) *Goemits {
+func New(c Config) *Goemits {
+	if c.RedisAddress == "" {
+		c.RedisAddress = "127.0.0.1:6379"
+	}
 	ge := new(Goemits)
-	ge.client = initRedis(addr)
-	ge.subclient = initRedis(addr).PubSub()
+	ge.client = initRedis(c.RedisAddress)
+	ge.subclient = initRedis(c.RedisAddress).PubSub()
 	ge.handlers = map[string]func(string){}
 	ge.isRunning = true
 	ge.m = &sync.Mutex{}
