@@ -28,6 +28,7 @@ func main() {
 		fmt.Println("Disconnect")
 		emit.Quit()
 	})
+	
 
 	emit.OnAny(func(message string) {
 		//This get any events
@@ -36,6 +37,12 @@ func main() {
 }
 
 ```
+
+Emit of the event
+```go
+emit.On("disconnect", "now)
+```
+
 
 # API
 

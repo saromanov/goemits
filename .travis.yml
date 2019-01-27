@@ -16,4 +16,4 @@ before_install:
   - go get github.com/mattn/goveralls
 script:
     - go test -v -covermode=count -coverprofile=coverage.out ./...
-  - goveralls -coverprofile=coverage.out -service travis-ci -repotoken GybrsAp4vyE2dcHAUF7sBfpKGlVNQh0Jr
+    - goveralls -coverprofile=coverage.out -service travis-ci -repotoken GybrsAp4vyE2dcHAUF7sBfpKGlVNQh0Jr
