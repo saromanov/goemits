@@ -9,7 +9,7 @@ import (
 	"gopkg.in/redis.v3"
 )
 
-//Goemits provides main structure
+//Goemits defines main structure of the app
 type Goemits struct {
 	//main client
 	client *redis.Client
@@ -26,7 +26,7 @@ type Goemits struct {
 	m            *sync.Mutex
 }
 
-//New provides initialization of Goemis
+//New provides initialization of Goemits
 //This should call in the first place
 func New(c Config) *Goemits {
 	if c.RedisAddress == "" {
@@ -37,12 +37,15 @@ func New(c Config) *Goemits {
 	ge.subclient = initRedis(c.RedisAddress).PubSub()
 	ge.handlers = map[string]func(string){}
 	ge.isRunning = true
+	ge.maxListeners = c.MaxListeners
 	ge.m = &sync.Mutex{}
 	return ge
 }
 
 //On provides subscribe to event
 func (ge *Goemits) On(event string, f func(string)) {
+	ge.m.Lock()
+	defer ge.m.Unlock()
 	liscount := len(ge.handlers)
 	if ge.maxListeners > 0 && liscount > 0 && liscount == ge.maxListeners {
 		log.Println("Can't add new listener, cause limit of listeners")
@@ -59,6 +62,8 @@ func (ge *Goemits) On(event string, f func(string)) {
 
 //OnAny provides catching any event
 func (ge *Goemits) OnAny(f func(string)) {
+	ge.m.Lock()
+	defer ge.m.Unlock()
 	ge.handlers["_any"] = f
 	ge.anyListener = true
 }
@@ -93,6 +98,8 @@ func (ge *Goemits) SetMaxListeners(num int) {
 
 //RemoveListener from store and unsubscribe from "listener" channel
 func (ge *Goemits) RemoveListener(listener string) {
+	ge.m.Lock()
+	defer ge.m.Unlock()
 	_, ok := ge.handlers[listener]
 	if !ok {
 		return

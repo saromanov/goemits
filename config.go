@@ -4,4 +4,6 @@ package goemits
 type Config struct {
 	// RedisAddress defines address for connect to Redis
 	RedisAddress string
+	// Number of maximum listeners
+	MaxListeners int
 }
