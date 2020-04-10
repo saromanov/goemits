@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/redis.v3"
+	"github.com/go-redis/redis/v8"
 )
 
 //Goemits defines main structure of the app

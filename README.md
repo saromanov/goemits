@@ -42,28 +42,3 @@ Emit of the event
 ```go
 emit.On("disconnect", "now)
 ```
-
-
-# API
-
-## emit.RemoveListsner(listener string)
-
-## emit.RemoveListeners(listener []string)
-
-## emit.On(event, message string)
-add new listener
-
-## emit.OnAny(message string)
-getting messages from all listeners
-
-## emit.Emit(listener string, message string)
-Fire message to listener
-
-## emit.EmitMany(listeners []stirng, message string)
-Fire message to list of listeners
-
-## emit.EmitAll(message)
-Fire message to all of listeners
-
-## emit.SetMaxListeners(num int)
-set maximum number of listeners
