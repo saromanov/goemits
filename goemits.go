@@ -78,7 +78,7 @@ func (ge *Goemits) OnAny(f func(interface{})) {
 }
 
 //Emit event
-func (ge *Goemits) Emit(event, message string) error {
+func (ge *Goemits) Emit(event string, message interface{}) error {
 	err := ge.client.Publish(context.Background(), event, message).Err()
 	if err != nil {
 		return fmt.Errorf("unable to publish message: %v", err)
@@ -87,14 +87,14 @@ func (ge *Goemits) Emit(event, message string) error {
 }
 
 //EmitMany provides fire message to list of listeners
-func (ge *Goemits) EmitMany(events []string, message string) {
+func (ge *Goemits) EmitMany(events []string, message interface{}) {
 	for _, listener := range events {
 		ge.Emit(listener, message)
 	}
 }
 
 //EmitAll provides fire message to all of listeners
-func (ge *Goemits) EmitAll(message string) {
+func (ge *Goemits) EmitAll(message interface{}) {
 	for _, listener := range ge.listeners {
 		ge.Emit(listener, message)
 	}

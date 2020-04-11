@@ -9,9 +9,12 @@ services:
   - redis-server
   
 before_install:
+  - go get "gopkg.in/redis.v3"
   - go get github.com/axw/gocov/gocov
   - go get golang.org/x/tools/cmd/cover
   - go get github.com/mattn/goveralls
+  - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $GOPATH/bin v1.24.0
 script:
+    - golangci-lint run
     - go test -v -covermode=count -coverprofile=coverage.out ./...
     - goveralls -coverprofile=coverage.out -service travis-ci -repotoken GybrsAp4vyE2dcHAUF7sBfpKGlVNQh0Jr
