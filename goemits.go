@@ -1,6 +1,7 @@
 package goemits
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"sync"
@@ -34,7 +35,7 @@ func New(c Config) *Goemits {
 	}
 	ge := new(Goemits)
 	ge.client = initRedis(c.RedisAddress)
-	ge.subclient = initRedis(c.RedisAddress).PubSub()
+	ge.subclient = initRedis(c.RedisAddress).Subscribe(context.Background())
 	ge.handlers = map[string]func(string){}
 	ge.isRunning = true
 	ge.maxListeners = c.MaxListeners
@@ -70,7 +71,7 @@ func (ge *Goemits) OnAny(f func(string)) {
 
 //Emit event
 func (ge *Goemits) Emit(event, message string) error {
-	err := ge.client.Publish(event, message).Err()
+	err := ge.client.Publish(context.Background(), event, message).Err()
 	if err != nil {
 		return fmt.Errorf("unable to publish message: %v", err)
 	}
@@ -107,7 +108,7 @@ func (ge *Goemits) RemoveListener(listener string) {
 	delete(ge.handlers, listener)
 	idx := ge.findListener(listener)
 	ge.listeners = append(ge.listeners[:idx], ge.listeners[idx+1:]...)
-	ge.subclient.Unsubscribe(listener)
+	ge.subclient.Unsubscribe(context.Background(), listener)
 }
 
 func (ge *Goemits) findListener(targlistener string) int {
@@ -143,12 +144,12 @@ func initRedis(addr string) *redis.Client {
 
 //This method gets messages from redis
 func (ge *Goemits) receiveMessages() (interface{}, error) {
-	return ge.subclient.ReceiveTimeout(100 * time.Millisecond)
+	return ge.subclient.ReceiveTimeout(context.Background(), 100*time.Millisecond)
 }
 
 //Subscribe to another event
 func (ge *Goemits) subscribe(event string) {
-	err := ge.subclient.Subscribe(event)
+	err := ge.subclient.Subscribe(context.Background(), event)
 	if err != nil {
 		panic(err)
 	}
