@@ -19,18 +19,18 @@ func main() {
 	emit := goemits.New(goemits.Config{
 		RedisAddress: "127.0.0.1:6379",
 	})
-	emit.On("connect", func(message string) {
+	emit.On("connect", func(message interface{}) {
 		fmt.Println("Found: ", message)
 		emit.Emit("disconnect", "data")
 	})
 
-	emit.On("disconnect", func(message string) {
+	emit.On("disconnect", func(message interface{}) {
 		fmt.Println("Disconnect")
 		emit.Quit()
 	})
 	
 
-	emit.OnAny(func(message string) {
+	emit.OnAny(func(message interface{}) {
 		//This get any events
 	})
 	emit.Start()
@@ -40,5 +40,5 @@ func main() {
 
 Emit of the event
 ```go
-emit.On("disconnect", "now)
+emit.On("disconnect", "now")
 ```
