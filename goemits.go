@@ -21,6 +21,7 @@ type Goemits struct {
 	handlers map[string]func(string)
 	//check if goemits is running
 	quit         chan struct{}
+	started      bool
 	anyListener  bool
 	maxListeners int
 	m            *sync.Mutex
@@ -46,9 +47,6 @@ func New(c Config) *Goemits {
 func (ge *Goemits) Ping() error {
 	if err := ge.client.Ping(context.Background()).Err(); err != nil {
 		return fmt.Errorf("unable to check Redis connection: %v", err)
-	}
-	if _, ok := <-ge.quit; !ok {
-		return fmt.Errorf("application was closed")
 	}
 	return nil
 }
@@ -143,12 +141,10 @@ func (ge *Goemits) Quit() error {
 	if err := ge.client.Close(); err != nil {
 		return fmt.Errorf("unable to close Redis connection: %v", err)
 	}
-
+	if !ge.started {
+		return fmt.Errorf("app is not started")
+	}
 	t := func() error {
-		_, ok := <-ge.quit
-		if !ok {
-			return fmt.Errorf("goemits was quit")
-		}
 		ge.quit <- struct{}{}
 		return nil
 	}
@@ -199,6 +195,7 @@ func (ge *Goemits) startMessagesLoop() {
 
 //Start provides beginning of catching messages
 func (ge *Goemits) Start() {
+	ge.started = true
 	go ge.startMessagesLoop()
 	select {
 	case <-ge.quit:

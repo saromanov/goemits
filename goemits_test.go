@@ -2,6 +2,8 @@ package goemits
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -13,10 +15,8 @@ func TestRunning(t *testing.T) {
 	res := New(Config{
 		RedisAddress: host,
 	})
-	if !res.isRunning {
-		t.Errorf("Init is not started")
-	}
-	res.Quit()
+	assert.NoError(t, res.Ping())
+	assert.Error(t, res.Quit())
 }
 
 func TestEmitEvent(t *testing.T) {
@@ -29,14 +29,9 @@ func TestEmitEvent(t *testing.T) {
 		value = message
 		res.Quit()
 	})
-	err := res.Emit("test", msg)
-	if err != nil {
-		t.Errorf("%v", err)
-	}
+	assert.NoError(t, res.Emit("test", msg))
 	res.Start()
-	if value != msg {
-		t.Errorf("%s not match %s", value, msg)
-	}
+	assert.Equal(t, msg, value)
 }
 
 func TestOnAny(t *testing.T) {
@@ -56,20 +51,10 @@ func TestOnAny(t *testing.T) {
 		values = append(values, message)
 	})
 
-	var err error
-	err = emit.Emit("test.first", "foobar")
-	if err != nil {
-		t.Errorf("%v", err)
-	}
-	err = emit.Emit("test.second", "foobar")
-	if err != nil {
-		t.Errorf("%v", err)
-	}
+	assert.NoError(t, emit.Emit("test.first", "foobar"))
+	assert.NoError(t, emit.Emit("test.second", "foobar"))
 	emit.Start()
-
-	if len(values) != 2 {
-		t.Errorf("%d not match %d", 2, len(values))
-	}
+	assert.Equal(t, 2, len(values))
 }
 
 func TestEmitMany(t *testing.T) {
@@ -87,10 +72,7 @@ func TestEmitMany(t *testing.T) {
 	})
 	emit.EmitMany([]string{"test.first", "test.second"}, msg)
 	emit.Start()
-	size := len(values)
-	if size != 2 {
-		t.Errorf("%d not match %d", 2, size)
-	}
+	assert.Equal(t, 2, len(values))
 }
 
 func TestEmitAll(t *testing.T) {
@@ -108,10 +90,7 @@ func TestEmitAll(t *testing.T) {
 	})
 	emit.EmitAll(msg)
 	emit.Start()
-	size := len(values)
-	if size != 2 {
-		t.Errorf("%d not match %d", 2, size)
-	}
+	assert.Equal(t, 2, len(values))
 }
 
 func TestMaxListeners(t *testing.T) {
@@ -121,9 +100,7 @@ func TestMaxListeners(t *testing.T) {
 	emit.SetMaxListeners(2)
 	emit.On("foobar", func(mesage string) {
 		size := len(emit.listeners)
-		if size != 2 {
-			t.Errorf("%d not match %d", size, 2)
-		}
+		assert.Equal(t, 2, size)
 		emit.Quit()
 	})
 	emit.On("foobar2", func(mesage string) {
@@ -145,9 +122,7 @@ func TestRemoveListener(t *testing.T) {
 	emit.On("foo", func(message string) {
 		emit.RemoveListener("foo")
 		emit.Quit()
-		if len(emit.listeners) != 0 {
-			t.Errorf("%d not match %d", 0, len(emit.listeners))
-		}
+		assert.Equal(t, 0, len(emit.listeners))
 	})
 
 	emit.Emit("foo", "bar")
@@ -161,9 +136,7 @@ func TestRemoveListeners(t *testing.T) {
 	emit.On("foo", func(message string) {
 		emit.RemoveListeners([]string{"foo", "value"})
 		emit.Quit()
-		if len(emit.listeners) != 0 {
-			t.Errorf("%d not match %d", 0, len(emit.listeners))
-		}
+		assert.Equal(t, 0, len(emit.listeners))
 	})
 	emit.On("value", func(message string) {})
 
@@ -180,7 +153,5 @@ func TestQuit(t *testing.T) {
 	})
 	emit.Emit("foo", "nn")
 	emit.Start()
-	if emit.isRunning {
-		t.Errorf("goemits must be stop")
-	}
+	assert.Error(t, emit.Quit())
 }
