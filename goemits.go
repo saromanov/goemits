@@ -144,7 +144,7 @@ func initRedis(addr string) *redis.Client {
 
 //This method gets messages from redis
 func (ge *Goemits) receiveMessages() (interface{}, error) {
-	return ge.subclient.ReceiveTimeout(context.Background(), 100*time.Millisecond)
+	return ge.subclient.ReceiveMessage(context.TODO())
 }
 
 //Subscribe to another event
