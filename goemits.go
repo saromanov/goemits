@@ -42,6 +42,17 @@ func New(c Config) *Goemits {
 	return ge
 }
 
+// Ping provides checking of redis connection and Goemits
+func (ge *Goemits) Ping() error {
+	if err := ge.client.Ping(context.Background()).Err(); err != nil {
+		return fmt.Errorf("unable to check Redis connection: %v", err)
+	}
+	if _, ok := <-ge.quit; !ok {
+		return fmt.Errorf("application was closed")
+	}
+	return nil
+}
+
 //On provides subscribe to event
 func (ge *Goemits) On(event string, f func(string)) {
 	ge.m.Lock()
