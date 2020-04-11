@@ -132,8 +132,16 @@ func (ge *Goemits) Quit() error {
 	if err := ge.client.Close(); err != nil {
 		return fmt.Errorf("unable to close Redis connection: %v", err)
 	}
-	ge.quit <- struct{}{}
-	return nil
+
+	t := func() error {
+		_, ok := <-ge.quit
+		if !ok {
+			return fmt.Errorf("goemits was quit")
+		}
+		ge.quit <- struct{}{}
+		return nil
+	}
+	return t()
 }
 
 func initRedis(addr string) *redis.Client {
@@ -183,6 +191,7 @@ func (ge *Goemits) Start() {
 	go ge.startMessagesLoop()
 	select {
 	case <-ge.quit:
+		close(ge.quit)
 		break
 	}
 }
