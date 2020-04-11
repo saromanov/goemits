@@ -17,15 +17,21 @@ func TestRunning(t *testing.T) {
 	})
 	assert.NoError(t, res.Ping())
 	assert.Error(t, res.Quit())
+	res2 := New(Config{})
+	assert.NoError(t, res2.Ping())
+	res3 := New(Config{
+		RedisAddress: host + "222",
+	})
+	assert.Error(t, res3.Ping())
 }
 
 func TestEmitEvent(t *testing.T) {
 	res := New(Config{
 		RedisAddress: host,
 	})
-	value := ""
+	var value interface{}
 	msg := "foobar"
-	res.On("test", func(message string) {
+	res.On("test", func(message interface{}) {
 		value = message
 		res.Quit()
 	})
@@ -38,16 +44,16 @@ func TestOnAny(t *testing.T) {
 	emit := New(Config{
 		RedisAddress: host,
 	})
-	values := []string{}
-	emit.On("test.first", func(message string) {
+	values := []interface{}{}
+	emit.On("test.first", func(message interface{}) {
 		emit.Quit()
 	})
 
-	emit.On("test.second", func(message string) {
+	emit.On("test.second", func(message interface{}) {
 		emit.Quit()
 	})
 
-	emit.OnAny(func(message string) {
+	emit.OnAny(func(message interface{}) {
 		values = append(values, message)
 	})
 
@@ -61,12 +67,12 @@ func TestEmitMany(t *testing.T) {
 	emit := New(Config{
 		RedisAddress: host,
 	})
-	values := []string{}
-	emit.On("test.first", func(message string) {
+	values := []interface{}{}
+	emit.On("test.first", func(message interface{}) {
 		values = append(values, message)
 	})
 
-	emit.On("test.second", func(message string) {
+	emit.On("test.second", func(message interface{}) {
 		values = append(values, message)
 		emit.Quit()
 	})
@@ -79,12 +85,12 @@ func TestEmitAll(t *testing.T) {
 	emit := New(Config{
 		RedisAddress: host,
 	})
-	values := []string{}
-	emit.On("test.first", func(message string) {
+	values := []interface{}{}
+	emit.On("test.first", func(message interface{}) {
 		values = append(values, message)
 	})
 
-	emit.On("test.second", func(message string) {
+	emit.On("test.second", func(message interface{}) {
 		values = append(values, message)
 		emit.Quit()
 	})
@@ -98,15 +104,15 @@ func TestMaxListeners(t *testing.T) {
 		RedisAddress: host,
 	})
 	emit.SetMaxListeners(2)
-	emit.On("foobar", func(mesage string) {
+	emit.On("foobar", func(mesage interface{}) {
 		size := len(emit.listeners)
 		assert.Equal(t, 2, size)
 		emit.Quit()
 	})
-	emit.On("foobar2", func(mesage string) {
+	emit.On("foobar2", func(mesage interface{}) {
 
 	})
-	emit.On("foobar3", func(mesage string) {
+	emit.On("foobar3", func(mesage interface{}) {
 
 	})
 
@@ -119,7 +125,7 @@ func TestRemoveListener(t *testing.T) {
 	emit := New(Config{
 		RedisAddress: host,
 	})
-	emit.On("foo", func(message string) {
+	emit.On("foo", func(message interface{}) {
 		emit.RemoveListener("foo")
 		emit.Quit()
 		assert.Equal(t, 0, len(emit.listeners))
@@ -133,12 +139,12 @@ func TestRemoveListeners(t *testing.T) {
 	emit := New(Config{
 		RedisAddress: host,
 	})
-	emit.On("foo", func(message string) {
+	emit.On("foo", func(message interface{}) {
 		emit.RemoveListeners([]string{"foo", "value"})
 		emit.Quit()
 		assert.Equal(t, 0, len(emit.listeners))
 	})
-	emit.On("value", func(message string) {})
+	emit.On("value", func(message interface{}) {})
 
 	emit.Emit("foo", "bar")
 	emit.Start()
@@ -148,7 +154,7 @@ func TestQuit(t *testing.T) {
 	emit := New(Config{
 		RedisAddress: host,
 	})
-	emit.On("foo", func(message string) {
+	emit.On("foo", func(message interface{}) {
 		emit.Quit()
 	})
 	emit.Emit("foo", "nn")

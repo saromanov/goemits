@@ -18,7 +18,7 @@ type Goemits struct {
 	//all of listeners
 	listeners []string
 	//triggers for events
-	handlers map[string]func(string)
+	handlers map[string]func(interface{})
 	//check if goemits is running
 	quit         chan struct{}
 	started      bool
@@ -36,7 +36,7 @@ func New(c Config) *Goemits {
 	ge := new(Goemits)
 	ge.client = initRedis(c.RedisAddress)
 	ge.pubsub = initRedis(c.RedisAddress).Subscribe(context.Background())
-	ge.handlers = map[string]func(string){}
+	ge.handlers = map[string]func(interface{}){}
 	ge.quit = make(chan struct{})
 	ge.maxListeners = c.MaxListeners
 	ge.m = &sync.Mutex{}
@@ -52,7 +52,7 @@ func (ge *Goemits) Ping() error {
 }
 
 //On provides subscribe to event
-func (ge *Goemits) On(event string, f func(string)) {
+func (ge *Goemits) On(event string, f func(interface{})) {
 	ge.m.Lock()
 	defer ge.m.Unlock()
 	liscount := len(ge.handlers)
@@ -70,7 +70,7 @@ func (ge *Goemits) On(event string, f func(string)) {
 }
 
 //OnAny provides catching any event
-func (ge *Goemits) OnAny(f func(string)) {
+func (ge *Goemits) OnAny(f func(interface{})) {
 	ge.m.Lock()
 	defer ge.m.Unlock()
 	ge.handlers["_any"] = f
