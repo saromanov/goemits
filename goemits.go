@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -15,13 +14,13 @@ type Goemits struct {
 	//main client
 	client *redis.Client
 	//pubsub object
-	subclient *redis.PubSub
+	pubsub *redis.PubSub
 	//all of listeners
 	listeners []string
 	//triggers for events
 	handlers map[string]func(string)
 	//check if goemits is running
-	isRunning    bool
+	quit         chan struct{}
 	anyListener  bool
 	maxListeners int
 	m            *sync.Mutex
@@ -35,9 +34,9 @@ func New(c Config) *Goemits {
 	}
 	ge := new(Goemits)
 	ge.client = initRedis(c.RedisAddress)
-	ge.subclient = initRedis(c.RedisAddress).Subscribe(context.Background())
+	ge.pubsub = initRedis(c.RedisAddress).Subscribe(context.Background())
 	ge.handlers = map[string]func(string){}
-	ge.isRunning = true
+	ge.quit = make(chan struct{})
 	ge.maxListeners = c.MaxListeners
 	ge.m = &sync.Mutex{}
 	return ge
@@ -108,7 +107,7 @@ func (ge *Goemits) RemoveListener(listener string) {
 	delete(ge.handlers, listener)
 	idx := ge.findListener(listener)
 	ge.listeners = append(ge.listeners[:idx], ge.listeners[idx+1:]...)
-	ge.subclient.Unsubscribe(context.Background(), listener)
+	ge.pubsub.Unsubscribe(context.Background(), listener)
 }
 
 func (ge *Goemits) findListener(targlistener string) int {
@@ -129,9 +128,12 @@ func (ge *Goemits) RemoveListeners(listeners []string) {
 }
 
 //Quit provides break up main loop
-func (ge *Goemits) Quit() {
-	ge.client.Close()
-	ge.isRunning = false
+func (ge *Goemits) Quit() error {
+	if err := ge.client.Close(); err != nil {
+		return fmt.Errorf("unable to close Redis connection: %v", err)
+	}
+	ge.quit <- struct{}{}
+	return nil
 }
 
 func initRedis(addr string) *redis.Client {
@@ -144,12 +146,12 @@ func initRedis(addr string) *redis.Client {
 
 //This method gets messages from redis
 func (ge *Goemits) receiveMessages() (interface{}, error) {
-	return ge.subclient.ReceiveMessage(context.TODO())
+	return ge.pubsub.ReceiveMessage(context.TODO())
 }
 
 //Subscribe to another event
 func (ge *Goemits) subscribe(event string) {
-	err := ge.subclient.Subscribe(context.Background(), event)
+	err := ge.pubsub.Subscribe(context.Background(), event)
 	if err != nil {
 		panic(err)
 	}
@@ -179,10 +181,8 @@ func (ge *Goemits) startMessagesLoop() {
 //Start provides beginning of catching messages
 func (ge *Goemits) Start() {
 	go ge.startMessagesLoop()
-	for {
-		if !ge.isRunning {
-			break
-		}
-		time.Sleep(time.Millisecond * 10)
+	select {
+	case <-ge.quit:
+		break
 	}
 }
