@@ -2,6 +2,7 @@ package goemits
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -56,7 +57,7 @@ func TestOnAny(t *testing.T) {
 	emit.OnAny(func(message interface{}) {
 		values = append(values, message)
 	})
-
+	time.Sleep(1 * time.Second)
 	assert.NoError(t, emit.Emit("test.first", "foobar"))
 	assert.NoError(t, emit.Emit("test.second", "foobar"))
 	emit.Start()
@@ -78,6 +79,7 @@ func TestEmitMany(t *testing.T) {
 	})
 	emit.EmitMany([]string{"test.first", "test.second"}, msg)
 	emit.Start()
+	time.Sleep(1 * time.Second)
 	assert.Equal(t, 2, len(values))
 }
 

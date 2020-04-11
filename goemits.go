@@ -33,14 +33,15 @@ func New(c Config) *Goemits {
 	if c.RedisAddress == "" {
 		c.RedisAddress = "127.0.0.1:6379"
 	}
-	ge := new(Goemits)
-	ge.client = initRedis(c.RedisAddress)
-	ge.pubsub = initRedis(c.RedisAddress).Subscribe(context.Background())
-	ge.handlers = map[string]func(interface{}){}
-	ge.quit = make(chan struct{})
-	ge.maxListeners = c.MaxListeners
-	ge.m = &sync.Mutex{}
-	return ge
+
+	return &Goemits{
+		client:       initRedis(c.RedisAddress),
+		pubsub:       initRedis(c.RedisAddress).Subscribe(context.Background()),
+		handlers:     map[string]func(interface{}){},
+		quit:         make(chan struct{}),
+		maxListeners: c.MaxListeners,
+		m:            &sync.Mutex{},
+	}
 }
 
 // Ping provides checking of redis connection and Goemits
@@ -48,6 +49,7 @@ func (ge *Goemits) Ping() error {
 	if err := ge.client.Ping(context.Background()).Err(); err != nil {
 		return fmt.Errorf("unable to check Redis connection: %v", err)
 	}
+
 	return nil
 }
 
@@ -56,14 +58,17 @@ func (ge *Goemits) On(event string, f func(interface{})) {
 	ge.m.Lock()
 	defer ge.m.Unlock()
 	liscount := len(ge.handlers)
+
 	if ge.maxListeners > 0 && liscount > 0 && liscount == ge.maxListeners {
 		log.Println("Can't add new listener, cause limit of listeners")
 		return
 	}
+
 	_, ok := ge.handlers[event]
 	if ok {
 		return
 	}
+
 	ge.listeners = append(ge.listeners, event)
 	ge.handlers[event] = f
 	ge.subscribe(event)
@@ -83,20 +88,21 @@ func (ge *Goemits) Emit(event string, message interface{}) error {
 	if err != nil {
 		return fmt.Errorf("unable to publish message: %v", err)
 	}
+
 	return nil
 }
 
 //EmitMany provides fire message to list of listeners
 func (ge *Goemits) EmitMany(events []string, message interface{}) {
 	for _, listener := range events {
-		ge.Emit(listener, message)
+		ge.Emit(listener, message) // nolint
 	}
 }
 
 //EmitAll provides fire message to all of listeners
 func (ge *Goemits) EmitAll(message interface{}) {
 	for _, listener := range ge.listeners {
-		ge.Emit(listener, message)
+		ge.Emit(listener, message) // nolint
 	}
 }
 
@@ -110,13 +116,16 @@ func (ge *Goemits) RemoveListener(listener string) {
 	ge.m.Lock()
 	defer ge.m.Unlock()
 	_, ok := ge.handlers[listener]
+
 	if !ok {
 		return
 	}
 	delete(ge.handlers, listener)
 	idx := ge.findListener(listener)
 	ge.listeners = append(ge.listeners[:idx], ge.listeners[idx+1:]...)
-	ge.pubsub.Unsubscribe(context.Background(), listener)
+	if err := ge.pubsub.Unsubscribe(context.Background(), listener); err != nil {
+		panic(err)
+	}
 }
 
 func (ge *Goemits) findListener(targlistener string) int {
@@ -126,6 +135,7 @@ func (ge *Goemits) findListener(targlistener string) int {
 			return i
 		}
 	}
+
 	return res
 }
 
@@ -148,6 +158,7 @@ func (ge *Goemits) Quit() error {
 		ge.quit <- struct{}{}
 		return nil
 	}
+
 	return t()
 }
 
@@ -178,7 +189,7 @@ func (ge *Goemits) startMessagesLoop() {
 		if err != nil {
 			return
 		}
-		switch msg := msgi.(type) {
+		switch msg := msgi.(type) { //nolint
 		case *redis.Message:
 			h, ok := ge.handlers[msg.Channel]
 			if ok {
@@ -197,9 +208,7 @@ func (ge *Goemits) startMessagesLoop() {
 func (ge *Goemits) Start() {
 	ge.started = true
 	go ge.startMessagesLoop()
-	select {
-	case <-ge.quit:
+	for range ge.quit {
 		close(ge.quit)
-		break
 	}
 }

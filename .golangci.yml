@@ -30,8 +30,7 @@ linters:
   disable:
     - maligned
     - prealloc
-    - gosec
-    - gochecknoglobals
+    - wsl
 
 run:
   skip-dirs:
