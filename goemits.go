@@ -54,24 +54,25 @@ func (ge *Goemits) Ping() error {
 }
 
 //On provides subscribe to event
-func (ge *Goemits) On(event string, f func(interface{})) {
+func (ge *Goemits) On(event string, f func(interface{})) error {
 	ge.m.Lock()
 	defer ge.m.Unlock()
 	liscount := len(ge.handlers)
 
 	if ge.maxListeners > 0 && liscount > 0 && liscount == ge.maxListeners {
-		log.Println("Can't add new listener, cause limit of listeners")
-		return
+		return fmt.Errorf("Can't add new listener, max limit of listeners %d has been reached", ge.maxListeners)
 	}
-
+	
+	// event already in the handlers
 	_, ok := ge.handlers[event]
 	if ok {
-		return
+		return nil
 	}
 
 	ge.listeners = append(ge.listeners, event)
 	ge.handlers[event] = f
 	ge.subscribe(event)
+	return nil
 }
 
 //OnAny provides catching any event
@@ -88,7 +89,6 @@ func (ge *Goemits) Emit(event string, message interface{}) error {
 	if err != nil {
 		return fmt.Errorf("unable to publish message: %v", err)
 	}
-
 	return nil
 }
 
@@ -112,20 +112,21 @@ func (ge *Goemits) SetMaxListeners(num int) {
 }
 
 //RemoveListener from store and unsubscribe from "listener" channel
-func (ge *Goemits) RemoveListener(listener string) {
+func (ge *Goemits) RemoveListener(listener string) error {
 	ge.m.Lock()
 	defer ge.m.Unlock()
+	// if listener is not registered, just return
 	_, ok := ge.handlers[listener]
-
 	if !ok {
-		return
+		return nil
 	}
 	delete(ge.handlers, listener)
 	idx := ge.findListener(listener)
 	ge.listeners = append(ge.listeners[:idx], ge.listeners[idx+1:]...)
 	if err := ge.pubsub.Unsubscribe(context.Background(), listener); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
 func (ge *Goemits) findListener(targlistener string) int {
