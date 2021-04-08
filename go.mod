@@ -1,4 +1,4 @@
-module github.com/saromanov/goemits
+module github.com/hzakher/goemits
 
 go 1.14
 

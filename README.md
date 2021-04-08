@@ -29,10 +29,11 @@ func main() {
 		emit.Quit()
 	})
 	
-
 	emit.OnAny(func(message interface{}) {
 		//This get any events
+		fmt.Println("any events!")
 	})
+	
 	emit.Start()
 }
 
@@ -40,5 +41,6 @@ func main() {
 
 Emit of the event
 ```go
-emit.On("disconnect", "now")
+emit.Emit("connect", "abc")
+emit.Emit("disconnect", "now")
 ```
