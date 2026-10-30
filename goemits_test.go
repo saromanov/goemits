@@ -1,165 +1,375 @@
+// Copyright 2019 Sergey Romanov
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENCE file.
+
 package goemits
 
 import (
+	"context"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-const (
-	msg  = "foobar"
-	host = "127.0.0.1:6379"
-)
-
-func TestRunning(t *testing.T) {
-	res := New(Config{
-		RedisAddress: host,
+func newTestEmitter(t *testing.T) *Goemits {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	ge, err := New(Config{Address: mr.Addr(), Codec: RawCodec{}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = ge.Close()
 	})
-	assert.NoError(t, res.Ping())
-	assert.Error(t, res.Quit())
-	res2 := New(Config{})
-	assert.NoError(t, res2.Ping())
-	res3 := New(Config{
-		RedisAddress: host + "222",
-	})
-	assert.Error(t, res3.Ping())
+	return ge
 }
 
-func TestEmitEvent(t *testing.T) {
-	res := New(Config{
-		RedisAddress: host,
-	})
-	var value interface{}
-	msg := "foobar"
-	res.On("test", func(message interface{}) {
-		value = message
-		res.Quit()
-	})
-	assert.NoError(t, res.Emit("test", msg))
-	res.Start()
-	assert.Equal(t, msg, value)
+func waitFor[T any](t *testing.T, ch chan T) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for event")
+		var zero T
+		return zero
+	}
 }
 
-func TestOnAny(t *testing.T) {
-	emit := New(Config{
-		RedisAddress: host,
-	})
-	values := []interface{}{}
-	emit.On("test.first", func(message interface{}) {
-		emit.Quit()
-	})
-
-	emit.On("test.second", func(message interface{}) {
-		emit.Quit()
-	})
-
-	emit.OnAny(func(message interface{}) {
-		values = append(values, message)
-	})
-	time.Sleep(1 * time.Second)
-	assert.NoError(t, emit.Emit("test.first", "foobar"))
-	assert.NoError(t, emit.Emit("test.second", "foobar"))
-	emit.Start()
-	assert.Equal(t, 2, len(values))
+func TestNewDefaults(t *testing.T) {
+	ge, err := New(Config{})
+	require.NoError(t, err)
+	assert.Equal(t, "127.0.0.1:6379", ge.client.Options().Addr)
+	require.NoError(t, ge.Close())
 }
 
-func TestEmitMany(t *testing.T) {
-	emit := New(Config{
-		RedisAddress: host,
-	})
-	values := []interface{}{}
-	emit.On("test.first", func(message interface{}) {
-		values = append(values, message)
-	})
+func TestPing(t *testing.T) {
+	ge := newTestEmitter(t)
+	require.NoError(t, ge.Ping(context.Background()))
 
-	emit.On("test.second", func(message interface{}) {
-		values = append(values, message)
-		emit.Quit()
-	})
-	emit.EmitMany([]string{"test.first", "test.second"}, msg)
-	emit.Start()
-	time.Sleep(1 * time.Second)
-	assert.Equal(t, 2, len(values))
+	bad, err := New(Config{Address: "127.0.0.1:1"})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = bad.Close() })
+	assert.Error(t, bad.Ping(context.Background()))
 }
 
-func TestEmitAll(t *testing.T) {
-	emit := New(Config{
-		RedisAddress: host,
-	})
-	values := []interface{}{}
-	emit.On("test.first", func(message interface{}) {
-		values = append(values, message)
-	})
+func TestOnDeliversPayload(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan string, 1)
+	require.NoError(t, ge.On("test", func(payload string) {
+		got <- payload
+	}))
 
-	emit.On("test.second", func(message interface{}) {
-		values = append(values, message)
-		emit.Quit()
-	})
-	emit.EmitAll(msg)
-	emit.Start()
-	assert.Equal(t, 2, len(values))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "test", "foobar"))
+	assert.Equal(t, "foobar", waitFor(t, got))
+
+	cancel()
+	assert.ErrorIs(t, <-done, context.Canceled)
+}
+
+func TestOnDeliversJSONStruct(t *testing.T) {
+	mr := miniredis.RunT(t)
+	ge, err := New(Config{Address: mr.Addr()})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ge.Close() })
+
+	type user struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	got := make(chan string, 1)
+	require.NoError(t, ge.On("user:created", func(payload string) {
+		got <- payload
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "user:created", user{ID: 42, Name: "alice"}))
+
+	payload := waitFor(t, got)
+	var decoded user
+	require.NoError(t, JSONCodec{}.Decode(payload, &decoded))
+	assert.Equal(t, user{ID: 42, Name: "alice"}, decoded)
+}
+
+func TestMultipleHandlersPerEvent(t *testing.T) {
+	ge := newTestEmitter(t)
+	first := make(chan string, 1)
+	second := make(chan string, 1)
+	require.NoError(t, ge.On("evt", func(payload string) { first <- payload }))
+	require.NoError(t, ge.On("evt", func(payload string) { second <- payload }))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "evt", "payload"))
+	assert.Equal(t, "payload", waitFor(t, first))
+	assert.Equal(t, "payload", waitFor(t, second))
+}
+
+func TestDuplicateHandler(t *testing.T) {
+	ge := newTestEmitter(t)
+	calls := make(chan string, 4)
+	handler := func(payload string) { calls <- payload }
+	require.NoError(t, ge.On("evt", handler))
+	require.NoError(t, ge.On("evt", handler))
+	assert.Len(t, ge.handlers["evt"], 2)
+}
+
+func TestOnAnyReceivesEventName(t *testing.T) {
+	ge := newTestEmitter(t)
+	type delivery struct {
+		event   string
+		payload string
+	}
+	got := make(chan delivery, 2)
+	require.NoError(t, ge.OnAny(func(event, payload string) {
+		got <- delivery{event, payload}
+	}))
+	require.NoError(t, ge.On("only.exact", func(payload string) {}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "only.exact", "data"))
+
+	d := waitFor(t, got)
+	assert.Equal(t, "only.exact", d.event)
+	assert.Equal(t, "data", d.payload)
 }
 
 func TestMaxListeners(t *testing.T) {
-	emit := New(Config{
-		RedisAddress: host,
-	})
-	emit.SetMaxListeners(2)
-	emit.On("foobar", func(mesage interface{}) {
-		size := len(emit.listeners)
-		assert.Equal(t, 2, size)
-		emit.Quit()
-	})
-	emit.On("foobar2", func(mesage interface{}) {
-
-	})
-	emit.On("foobar3", func(mesage interface{}) {
-
-	})
-
-	emit.Emit("foobar", "A")
-	emit.Start()
-
+	ge := newTestEmitter(t)
+	ge.SetMaxListeners(1)
+	require.NoError(t, ge.On("first", func(string) {}))
+	assert.Error(t, ge.On("second", func(string) {}))
 }
 
 func TestRemoveListener(t *testing.T) {
-	emit := New(Config{
-		RedisAddress: host,
-	})
-	emit.On("foo", func(message interface{}) {
-		emit.RemoveListener("foo")
-		emit.Quit()
-		assert.Equal(t, 0, len(emit.listeners))
-	})
+	ge := newTestEmitter(t)
+	got := make(chan string, 1)
+	require.NoError(t, ge.On("evt", func(payload string) { got <- payload }))
+	require.NoError(t, ge.RemoveListener("evt"))
 
-	emit.Emit("foo", "bar")
-	emit.Start()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "evt", "ignored"))
+	select {
+	case <-got:
+		t.Fatal("handler must not be called after removal")
+	case <-time.After(200 * time.Millisecond):
+	}
 }
 
-func TestRemoveListeners(t *testing.T) {
-	emit := New(Config{
-		RedisAddress: host,
-	})
-	emit.On("foo", func(message interface{}) {
-		emit.RemoveListeners([]string{"foo", "value"})
-		emit.Quit()
-		assert.Equal(t, 0, len(emit.listeners))
-	})
-	emit.On("value", func(message interface{}) {})
+func TestEmitMany(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan string, 4)
+	require.NoError(t, ge.On("a", func(payload string) { got <- "a:" + payload }))
+	require.NoError(t, ge.On("b", func(payload string) { got <- "b:" + payload }))
 
-	emit.Emit("foo", "bar")
-	emit.Start()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.EmitMany(ctx, []string{"a", "b"}, "data"))
+	assert.Equal(t, "a:data", waitFor(t, got))
+	assert.Equal(t, "b:data", waitFor(t, got))
 }
 
-func TestQuit(t *testing.T) {
-	emit := New(Config{
-		RedisAddress: host,
-	})
-	emit.On("foo", func(message interface{}) {
-		emit.Quit()
-	})
-	emit.Emit("foo", "nn")
-	emit.Start()
-	assert.Error(t, emit.Quit())
+func TestEmitAll(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan string, 4)
+	require.NoError(t, ge.On("a", func(payload string) { got <- "a:" + payload }))
+	require.NoError(t, ge.On("b", func(payload string) { got <- "b:" + payload }))
+	require.NoError(t, ge.RemoveListener("b"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.EmitAll(ctx, "data"))
+	assert.Equal(t, "a:data", waitFor(t, got))
+	select {
+	case <-got:
+		t.Fatal("removed listener must not receive EmitAll")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestEmitEncodeError(t *testing.T) {
+	ge := newTestEmitter(t)
+	require.Error(t, ge.Emit(context.Background(), "evt", make(chan int)))
+}
+
+func TestCustomCodec(t *testing.T) {
+	mr := miniredis.RunT(t)
+	ge, err := New(Config{Address: mr.Addr(), Codec: prefixCodec{}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ge.Close() })
+
+	got := make(chan string, 1)
+	require.NoError(t, ge.On("evt", func(payload string) { got <- payload }))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "evt", "value"))
+	assert.Equal(t, "encoded:value", waitFor(t, got))
+}
+
+type prefixCodec struct{}
+
+func (prefixCodec) Encode(message any) (string, error) {
+	return "encoded:" + strings.TrimSpace(anyToString(message)), nil
+}
+
+func (prefixCodec) Decode(payload string, v any) error {
+	return JSONCodec{}.Decode(strings.TrimPrefix(payload, "encoded:"), v)
+}
+
+func anyToString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return "unknown"
+}
+
+func TestStartTwice(t *testing.T) {
+	ge := newTestEmitter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+	require.Eventually(t, func() bool { return ge.started.Load() }, time.Second, 5*time.Millisecond)
+	assert.Error(t, ge.Start(context.Background()))
+}
+
+func TestCloseStopsStart(t *testing.T) {
+	ge := newTestEmitter(t)
+	done := make(chan error, 1)
+	go func() { done <- ge.Start(context.Background()) }()
+	time.Sleep(100 * time.Millisecond)
+	require.NoError(t, ge.Close())
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after Close")
+	}
+	require.NoError(t, ge.Close())
+}
+
+func TestCloseIdempotent(t *testing.T) {
+	ge := newTestEmitter(t)
+	require.NoError(t, ge.Close())
+	require.NoError(t, ge.Close())
+}
+
+func TestOnAfterClose(t *testing.T) {
+	ge := newTestEmitter(t)
+	require.NoError(t, ge.Close())
+	assert.Error(t, ge.On("evt", func(string) {}))
+}
+
+func TestOnValidation(t *testing.T) {
+	ge := newTestEmitter(t)
+	assert.Error(t, ge.On("", func(string) {}))
+	assert.Error(t, ge.On("evt", nil))
+	assert.Error(t, ge.OnAny(nil))
+}
+
+func TestHandlerPanicRecovered(t *testing.T) {
+	ge := newTestEmitter(t)
+	require.NoError(t, ge.On("boom", func(string) { panic("handler failed") }))
+	got := make(chan string, 1)
+	require.NoError(t, ge.On("alive", func(payload string) { got <- payload }))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "boom", "x"))
+	require.NoError(t, ge.Emit(ctx, "alive", "still running"))
+	assert.Equal(t, "still running", waitFor(t, got))
+
+	cancel()
+	assert.ErrorIs(t, <-done, context.Canceled)
+}
+
+func TestConcurrentUsage(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan string, 8)
+	require.NoError(t, ge.OnAny(func(event, payload string) { got <- payload }))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 2; j++ {
+				assert.NoError(t, ge.Emit(ctx, "concurrent", "payload"))
+			}
+		}()
+	}
+	wg.Wait()
+
+	for i := 0; i < 8; i++ {
+		assert.Equal(t, "payload", waitFor(t, got))
+	}
+}
+
+func TestListenerLimitZeroMeansUnlimited(t *testing.T) {
+	ge := newTestEmitter(t)
+	for _, event := range []string{"a", "b", "c", "d", "e"} {
+		require.NoError(t, ge.On(event, func(string) {}))
+	}
+}
+
+func TestStartReturnsErrorWhenPubsubClosed(t *testing.T) {
+	ge := newTestEmitter(t)
+	require.NoError(t, ge.Close())
+	done := make(chan error, 1)
+	go func() { done <- ge.Start(context.Background()) }()
+	select {
+	case err := <-done:
+		assert.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after pubsub close")
+	}
+}
+
+func TestEmitManyPartialFailure(t *testing.T) {
+	ge := newTestEmitter(t)
+	err := ge.EmitMany(context.Background(), []string{"a"}, 42)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to encode")
+}
+
+func TestRawCodec(t *testing.T) {
+	ge := newTestEmitter(t)
+	var out string
+	require.NoError(t, RawCodec{}.Decode("payload", &out))
+	assert.Equal(t, "payload", out)
+	assert.Error(t, RawCodec{}.Decode("payload", new(int)))
+	assert.Error(t, ge.Emit(context.Background(), "evt", 42))
 }
