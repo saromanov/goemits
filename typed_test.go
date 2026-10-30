@@ -7,6 +7,7 @@ package goemits
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
@@ -132,5 +133,7 @@ func TestOnTypedPanicRecovered(t *testing.T) {
 	assert.Equal(t, testUser{ID: 4, Name: "eve"}, waitFor(t, got))
 
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
 }
