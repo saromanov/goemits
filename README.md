@@ -14,8 +14,10 @@ small, Go-idiomatic API:
 
 - `On` registers a handler for an event; multiple handlers per event are
   allowed.
-- `OnAny` receives every event with its name, so you can build audit or
-  debug listeners.
+- `OnPattern` subscribes to events matching a Redis glob-style pattern,
+  e.g. `user:*`.
+- `OnAny` receives every event delivered to the emitter with its name,
+  so you can build audit or debug listeners.
 - `Emit` publishes a message; payloads are encoded with a pluggable codec
   (JSON by default), so events are consumable from any language.
 - Contexts are first-class: publish with cancellation, stop the delivery
@@ -83,6 +85,17 @@ func main() {
 		log.Fatal(err)
 	}
 }
+```
+
+## Pattern subscriptions
+
+Events can be routed by Redis glob-style patterns: `*`, `?` and `[...]`.
+Pattern handlers receive the actual event name along with the payload:
+
+```go
+err = ge.OnPattern("user:*", func(event, payload string) {
+	fmt.Printf("user event %s: %s\n", event, payload)
+})
 ```
 
 ## Configuration

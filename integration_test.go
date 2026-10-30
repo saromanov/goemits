@@ -31,11 +31,15 @@ func TestIntegration(t *testing.T) {
 
 	got := make(chan string, 1)
 	anyGot := make(chan string, 1)
+	patternGot := make(chan string, 1)
 	require.NoError(t, ge.On("integration", func(payload string) {
 		got <- payload
 	}))
 	require.NoError(t, ge.OnAny(func(event, payload string) {
 		anyGot <- event
+	}))
+	require.NoError(t, ge.OnPattern("integration:*", func(event, payload string) {
+		patternGot <- event
 	}))
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -43,6 +47,7 @@ func TestIntegration(t *testing.T) {
 	go func() { _ = ge.Start(ctx) }()
 
 	require.NoError(t, ge.Emit(ctx, "integration", "hello"))
+	require.NoError(t, ge.Emit(ctx, "integration:created", "evt"))
 
 	select {
 	case payload := <-got:
@@ -58,5 +63,12 @@ func TestIntegration(t *testing.T) {
 		assert.Equal(t, "integration", event)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for any handler")
+	}
+
+	select {
+	case event := <-patternGot:
+		assert.Equal(t, "integration:created", event)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for pattern handler")
 	}
 }

@@ -17,6 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type eventDelivery struct {
+	event   string
+	payload string
+}
+
 func newTestEmitter(t *testing.T) *Goemits {
 	t.Helper()
 	mr := miniredis.RunT(t)
@@ -128,15 +133,111 @@ func TestDuplicateHandler(t *testing.T) {
 	assert.Len(t, ge.handlers["evt"], 2)
 }
 
+func TestOnPatternDelivery(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan eventDelivery, 2)
+	require.NoError(t, ge.OnPattern("user:*", func(event, payload string) {
+		got <- eventDelivery{event, payload}
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "user:created", "alice"))
+	require.NoError(t, ge.Emit(ctx, "user:deleted", "bob"))
+
+	d := waitFor(t, got)
+	assert.Equal(t, "user:created", d.event)
+	assert.Equal(t, "alice", d.payload)
+	d = waitFor(t, got)
+	assert.Equal(t, "user:deleted", d.event)
+	assert.Equal(t, "bob", d.payload)
+}
+
+func TestOnPatternDoesNotMatchOtherEvents(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan eventDelivery, 1)
+	require.NoError(t, ge.OnPattern("user:*", func(event, payload string) {
+		got <- eventDelivery{event, payload}
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "order:created", "x"))
+	select {
+	case <-got:
+		t.Fatal("pattern handler must not be called for non-matching event")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestOnPatternAndExactBothFire(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan string, 4)
+	require.NoError(t, ge.OnPattern("user:*", func(event, payload string) { got <- "pattern:" + payload }))
+	require.NoError(t, ge.On("user:created", func(payload string) { got <- "exact:" + payload }))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "user:created", "data"))
+	first := waitFor(t, got)
+	second := waitFor(t, got)
+	assert.ElementsMatch(t, []string{"exact:data", "pattern:data"}, []string{first, second})
+}
+
+func TestRemovePattern(t *testing.T) {
+	ge := newTestEmitter(t)
+	got := make(chan eventDelivery, 1)
+	require.NoError(t, ge.OnPattern("user:*", func(event, payload string) {
+		got <- eventDelivery{event, payload}
+	}))
+	require.NoError(t, ge.RemovePattern("user:*"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = ge.Start(ctx) }()
+
+	require.NoError(t, ge.Emit(ctx, "user:created", "ignored"))
+	select {
+	case <-got:
+		t.Fatal("pattern handler must not be called after removal")
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestOnPatternMultipleHandlers(t *testing.T) {
+	ge := newTestEmitter(t)
+	first := make(chan string, 1)
+	second := make(chan string, 1)
+	require.NoError(t, ge.OnPattern("evt:*", func(_, payload string) { first <- payload }))
+	require.NoError(t, ge.OnPattern("evt:*", func(_, payload string) { second <- payload }))
+	assert.Len(t, ge.patternHandlers["evt:*"], 2)
+}
+
+func TestOnPatternValidation(t *testing.T) {
+	ge := newTestEmitter(t)
+	assert.Error(t, ge.OnPattern("", func(string, string) {}))
+	assert.Error(t, ge.OnPattern("user:*", nil))
+}
+
+func TestMaxListenersCountsPatterns(t *testing.T) {
+	ge := newTestEmitter(t)
+	ge.SetMaxListeners(2)
+	require.NoError(t, ge.On("a", func(string) {}))
+	require.NoError(t, ge.OnPattern("b:*", func(string, string) {}))
+	assert.Error(t, ge.OnPattern("c:*", func(string, string) {}))
+}
+
 func TestOnAnyReceivesEventName(t *testing.T) {
 	ge := newTestEmitter(t)
-	type delivery struct {
-		event   string
-		payload string
-	}
-	got := make(chan delivery, 2)
+	got := make(chan eventDelivery, 2)
 	require.NoError(t, ge.OnAny(func(event, payload string) {
-		got <- delivery{event, payload}
+		got <- eventDelivery{event, payload}
 	}))
 	require.NoError(t, ge.On("only.exact", func(payload string) {}))
 
@@ -315,6 +416,7 @@ func TestHandlerPanicRecovered(t *testing.T) {
 func TestConcurrentUsage(t *testing.T) {
 	ge := newTestEmitter(t)
 	got := make(chan string, 8)
+	require.NoError(t, ge.On("concurrent", func(payload string) { got <- payload }))
 	require.NoError(t, ge.OnAny(func(event, payload string) { got <- payload }))
 
 	ctx, cancel := context.WithCancel(context.Background())
