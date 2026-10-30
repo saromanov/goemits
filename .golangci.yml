@@ -10,5 +10,8 @@ linters:
     - unparam
 
 formatters:
-  gofmt:
-    simplify: true
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true

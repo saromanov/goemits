@@ -46,7 +46,9 @@ func TestIntegration(t *testing.T) {
 
 	select {
 	case payload := <-got:
-		assert.Equal(t, "hello", payload)
+		var s string
+		require.NoError(t, JSONCodec{}.Decode(payload, &s))
+		assert.Equal(t, "hello", s)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for exact handler")
 	}
