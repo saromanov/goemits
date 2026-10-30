@@ -47,6 +47,7 @@ func TestIntegration(t *testing.T) {
 	go func() { _ = ge.Start(ctx) }()
 
 	require.NoError(t, ge.Emit(ctx, "integration", "hello"))
+	require.NoError(t, ge.Emit(ctx, "integration:created", "evt"))
 
 	select {
 	case payload := <-got:
@@ -66,7 +67,7 @@ func TestIntegration(t *testing.T) {
 
 	select {
 	case event := <-patternGot:
-		assert.Equal(t, "integration", event)
+		assert.Equal(t, "integration:created", event)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for pattern handler")
 	}
