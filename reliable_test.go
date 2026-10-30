@@ -20,10 +20,12 @@ func newReliableEmitter(t *testing.T, cfg Config) *Goemits {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	cfg.Address = mr.Addr()
-	cfg.Codec = RawCodec{}
+	if cfg.Codec == nil {
+		cfg.Codec = RawCodec{}
+	}
 	cfg.PollInterval = 20 * time.Millisecond
-	cfg.ClaimIdle = 30 * time.Millisecond
-	cfg.ClaimInterval = 50 * time.Millisecond
+	cfg.ClaimIdle = 50 * time.Millisecond
+	cfg.ClaimInterval = 100 * time.Millisecond
 	ge, err := New(cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() {
