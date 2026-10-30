@@ -44,6 +44,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -68,11 +69,19 @@ type Goemits struct {
 	codec  Codec
 	logger *slog.Logger
 
-	handlers        map[string][]handlerFunc
-	patternHandlers map[string][]patternHandlerFunc
-	anyHandlers     []anyHandlerFunc
-	listeners       []string
-	maxListeners    int
+	handlers         map[string][]handlerFunc
+	patternHandlers  map[string][]patternHandlerFunc
+	reliableHandlers map[string][]handlerFunc
+	anyHandlers      []anyHandlerFunc
+	listeners        []string
+	maxListeners     int
+
+	group           string
+	consumer        string
+	claimIdle       time.Duration
+	claimInterval   time.Duration
+	pollInterval    time.Duration
+	maxStreamLength int64
 
 	m        sync.RWMutex
 	started  atomic.Bool
@@ -89,6 +98,21 @@ func New(cfg Config) (*Goemits, error) {
 	if cfg.Codec == nil {
 		cfg.Codec = JSONCodec{}
 	}
+	if cfg.ConsumerGroup == "" {
+		cfg.ConsumerGroup = DefaultConsumerGroup
+	}
+	if cfg.ConsumerName == "" {
+		cfg.ConsumerName = DefaultConsumerName
+	}
+	if cfg.ClaimIdle <= 0 {
+		cfg.ClaimIdle = DefaultClaimIdle
+	}
+	if cfg.ClaimInterval <= 0 {
+		cfg.ClaimInterval = DefaultClaimInterval
+	}
+	if cfg.PollInterval <= 0 {
+		cfg.PollInterval = DefaultPollInterval
+	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -103,13 +127,20 @@ func New(cfg Config) (*Goemits, error) {
 	pubsub := client.Subscribe(context.Background())
 
 	return &Goemits{
-		client:          client,
-		pubsub:          pubsub,
-		codec:           cfg.Codec,
-		logger:          logger,
-		handlers:        make(map[string][]handlerFunc),
-		patternHandlers: make(map[string][]patternHandlerFunc),
-		maxListeners:    cfg.MaxListeners,
+		client:           client,
+		pubsub:           pubsub,
+		codec:            cfg.Codec,
+		logger:           logger,
+		handlers:         make(map[string][]handlerFunc),
+		patternHandlers:  make(map[string][]patternHandlerFunc),
+		reliableHandlers: make(map[string][]handlerFunc),
+		maxListeners:     cfg.MaxListeners,
+		group:            cfg.ConsumerGroup,
+		consumer:         cfg.ConsumerName,
+		claimIdle:        cfg.ClaimIdle,
+		claimInterval:    cfg.ClaimInterval,
+		pollInterval:     cfg.PollInterval,
+		maxStreamLength:  cfg.MaxStreamLength,
 	}, nil
 }
 
@@ -286,7 +317,7 @@ func (ge *Goemits) RemoveListeners(events []string) error {
 	return errors.Join(errs...)
 }
 
-// Start runs the delivery loop and blocks until Close is called or
+// Start runs the delivery loops and blocks until Close is called or
 // ctx is cancelled. It returns nil after Close and context.Canceled on
 // cancellation. Start can be called only once.
 func (ge *Goemits) Start(ctx context.Context) error {
@@ -303,6 +334,15 @@ func (ge *Goemits) Start(ctx context.Context) error {
 		ge.closeCtx = nil
 		ge.m.Unlock()
 	}()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ge.reliableLoop(ctx)
+	}()
+	defer wg.Wait()
+	defer cancel()
 
 	messages := ge.pubsub.Channel()
 	for {

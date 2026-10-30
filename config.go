@@ -10,9 +10,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 const defaultRedisAddress = "127.0.0.1:6379"
+
+// Default values for reliable delivery configuration.
+const (
+	DefaultConsumerGroup = "goemits"
+	DefaultConsumerName  = "goemits"
+	DefaultClaimIdle     = time.Minute
+	DefaultClaimInterval = 30 * time.Second
+	DefaultPollInterval  = 100 * time.Millisecond
+	defaultPayloadField  = "payload"
+)
 
 // Config defines attributes for the emitter.
 type Config struct {
@@ -26,7 +37,8 @@ type Config struct {
 	// TLSConfig enables TLS connections to the Redis server.
 	TLSConfig *tls.Config
 	// MaxListeners limits the number of distinct events that can be
-	// registered with On. Zero or a negative value means unlimited.
+	// registered with On and OnPattern. Zero or a negative value means
+	// unlimited.
 	MaxListeners int
 	// Codec encodes and decodes event payloads. Defaults to
 	// JSONCodec.
@@ -34,6 +46,26 @@ type Config struct {
 	// Logger receives internal diagnostics, e.g. recovered handler
 	// panics. Defaults to a logger that discards everything.
 	Logger *slog.Logger
+
+	// ConsumerGroup is the Redis Streams consumer group used for
+	// reliable delivery. Defaults to "goemits".
+	ConsumerGroup string
+	// ConsumerName is the consumer name within the consumer group.
+	// Defaults to "goemits".
+	ConsumerName string
+	// ClaimIdle is how long a pending reliable message must stay
+	// unacknowledged before another emitter instance may reclaim it.
+	// Defaults to time.Minute.
+	ClaimIdle time.Duration
+	// ClaimInterval is how often an emitter looks for stale pending
+	// reliable messages. Defaults to 30s.
+	ClaimInterval time.Duration
+	// PollInterval is how often an emitter checks reliable streams for
+	// new messages. Defaults to 100ms.
+	PollInterval time.Duration
+	// MaxStreamLength caps the length of reliable streams with an
+	// approximate trim. Zero or a negative value means unlimited.
+	MaxStreamLength int64
 }
 
 // Codec encodes outgoing messages and decodes incoming payloads.

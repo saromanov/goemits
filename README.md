@@ -18,6 +18,9 @@ small, Go-idiomatic API:
   e.g. `user:*`.
 - `OnAny` receives every event delivered to the emitter with its name,
   so you can build audit or debug listeners.
+- `OnReliable` and `EmitReliable` provide at-least-once delivery backed
+  by Redis Streams: messages survive offline subscribers, crashes are
+  recovered by reclaiming unacknowledged messages.
 - `Emit` publishes a message; payloads are encoded with a pluggable codec
   (JSON by default), so events are consumable from any language.
 - Contexts are first-class: publish with cancellation, stop the delivery
@@ -87,6 +90,33 @@ func main() {
 }
 ```
 
+## Reliable delivery
+
+Redis pub/sub is fire-and-forget: a message published while no one is
+subscribed is lost. For events that must not be lost, use
+`EmitReliable`/`OnReliable`, which are backed by Redis Streams:
+
+```go
+err = ge.OnReliable("jobs", func(payload string) {
+	fmt.Println("job:", payload)
+})
+
+err = ge.EmitReliable(ctx, "jobs", map[string]any{"id": 42})
+```
+
+Messages are stored in a stream per event and delivered with a consumer
+group:
+
+- a subscriber that starts later still receives everything published
+  before it attached;
+- a message is acknowledged after all handlers for the event have run;
+- messages left pending by a crashed emitter are reclaimed by other
+  instances after `ClaimIdle`;
+- handlers must tolerate redelivery (at-least-once semantics).
+
+Group and consumer names, reclaim and poll timings and the stream
+length cap are configurable — see `Config` below.
+
 ## Pattern subscriptions
 
 Events can be routed by Redis glob-style patterns: `*`, `?` and `[...]`.
@@ -106,9 +136,15 @@ err = ge.OnPattern("user:*", func(event, payload string) {
 | `Password`      | Redis password, if required                                         | empty               |
 | `DB`            | Redis database to select                                            | `0`                 |
 | `TLSConfig`     | TLS configuration for encrypted connections                         | nil (no TLS)        |
-| `MaxListeners`  | Maximum number of distinct events registered with `On`; 0 = no limit| `0`                 |
+| `MaxListeners`  | Maximum number of distinct events registered with `On`, `OnPattern` and `OnReliable`; 0 = no limit | `0`                 |
 | `Codec`         | Payload encoder/decoder                                             | `JSONCodec{}`       |
 | `Logger`        | `*slog.Logger` for internal diagnostics                             | discards everything |
+| `ConsumerGroup` | Consumer group name for reliable delivery                           | `goemits`           |
+| `ConsumerName`  | Consumer name within the group                                      | `goemits`           |
+| `ClaimIdle`     | Pending age before a reliable message may be reclaimed              | `1m`                |
+| `ClaimInterval` | How often stale pending messages are reclaimed                      | `30s`               |
+| `PollInterval`  | How often reliable streams are polled for new messages              | `100ms`             |
+| `MaxStreamLength` | Approximate cap on reliable stream length; 0 = unlimited          | `0`                 |
 
 ## Codecs
 

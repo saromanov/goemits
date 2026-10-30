@@ -71,4 +71,18 @@ func TestIntegration(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for pattern handler")
 	}
+
+	reliableGot := make(chan string, 1)
+	require.NoError(t, ge.OnReliable("integration:reliable", func(payload string) {
+		reliableGot <- payload
+	}))
+	require.NoError(t, ge.EmitReliable(ctx, "integration:reliable", "stored"))
+	select {
+	case payload := <-reliableGot:
+		var s string
+		require.NoError(t, JSONCodec{}.Decode(payload, &s))
+		assert.Equal(t, "stored", s)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for reliable handler")
+	}
 }
