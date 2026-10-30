@@ -51,6 +51,10 @@ import (
 // handlerFunc receives a raw payload string for a subscribed event.
 type handlerFunc func(payload string)
 
+// patternHandlerFunc receives the actual channel name and the raw
+// payload for a message matched by a pattern subscription.
+type patternHandlerFunc func(event string, payload string)
+
 // anyHandlerFunc receives the event name and the raw payload for every
 // event delivered through the wildcard subscription.
 type anyHandlerFunc func(event string, payload string)
@@ -64,10 +68,11 @@ type Goemits struct {
 	codec  Codec
 	logger *slog.Logger
 
-	handlers     map[string][]handlerFunc
-	anyHandlers  []anyHandlerFunc
-	listeners    []string
-	maxListeners int
+	handlers        map[string][]handlerFunc
+	patternHandlers map[string][]patternHandlerFunc
+	anyHandlers     []anyHandlerFunc
+	listeners       []string
+	maxListeners    int
 
 	m        sync.RWMutex
 	started  atomic.Bool
@@ -98,12 +103,13 @@ func New(cfg Config) (*Goemits, error) {
 	pubsub := client.Subscribe(context.Background())
 
 	return &Goemits{
-		client:       client,
-		pubsub:       pubsub,
-		codec:        cfg.Codec,
-		logger:       logger,
-		handlers:     make(map[string][]handlerFunc),
-		maxListeners: cfg.MaxListeners,
+		client:          client,
+		pubsub:          pubsub,
+		codec:           cfg.Codec,
+		logger:          logger,
+		handlers:        make(map[string][]handlerFunc),
+		patternHandlers: make(map[string][]patternHandlerFunc),
+		maxListeners:    cfg.MaxListeners,
 	}, nil
 }
 
@@ -143,9 +149,38 @@ func (ge *Goemits) On(event string, handler func(payload string)) error {
 	return nil
 }
 
-// OnAny registers handler that receives every event published through
-// this instance, including events subscribed by On. The handler
-// receives the event name along with the payload.
+// OnPattern registers handler for events matching the Redis glob-style
+// pattern, e.g. "user:*". The handler receives the actual event name
+// along with the payload. Multiple handlers per pattern are allowed.
+func (ge *Goemits) OnPattern(pattern string, handler func(event string, payload string)) error {
+	if pattern == "" {
+		return errors.New("goemits: pattern is empty")
+	}
+	if handler == nil {
+		return errors.New("goemits: handler is nil")
+	}
+
+	ge.m.Lock()
+	defer ge.m.Unlock()
+	if _, ok := ge.patternHandlers[pattern]; !ok {
+		if ge.maxListeners > 0 && len(ge.handlers)+len(ge.patternHandlers) >= ge.maxListeners {
+			return fmt.Errorf("goemits: listener limit reached (%d)", ge.maxListeners)
+		}
+	}
+	ge.patternHandlers[pattern] = append(ge.patternHandlers[pattern], handler)
+
+	if err := ge.pubsub.PSubscribe(context.Background(), pattern); err != nil {
+		return fmt.Errorf("goemits: unable to subscribe to pattern %q: %w", pattern, err)
+	}
+	return nil
+}
+
+// OnAny registers handler that receives every event delivered to this
+// emitter, i.e. events subscribed via On and events matched by
+// OnPattern patterns. The handler receives the event name along with
+// the payload. If an event is delivered both by an exact subscription
+// and by a pattern, the handler is called once per delivery, just like
+// any other Redis subscription.
 func (ge *Goemits) OnAny(handler func(event string, payload string)) error {
 	if handler == nil {
 		return errors.New("goemits: handler is nil")
@@ -154,10 +189,6 @@ func (ge *Goemits) OnAny(handler func(event string, payload string)) error {
 	ge.m.Lock()
 	defer ge.m.Unlock()
 	ge.anyHandlers = append(ge.anyHandlers, handler)
-
-	if err := ge.pubsub.PSubscribe(context.Background(), "*"); err != nil {
-		return fmt.Errorf("goemits: unable to subscribe to any event: %w", err)
-	}
 	return nil
 }
 
@@ -222,6 +253,24 @@ func (ge *Goemits) RemoveListener(event string) error {
 
 	if err := ge.pubsub.Unsubscribe(context.Background(), event); err != nil {
 		return fmt.Errorf("goemits: unable to unsubscribe from %q: %w", event, err)
+	}
+	return nil
+}
+
+// RemovePattern removes all handlers registered for the pattern and
+// unsubscribes from it. Removing a pattern that was never registered
+// does nothing.
+func (ge *Goemits) RemovePattern(pattern string) error {
+	ge.m.Lock()
+	if _, ok := ge.patternHandlers[pattern]; !ok {
+		ge.m.Unlock()
+		return nil
+	}
+	delete(ge.patternHandlers, pattern)
+	ge.m.Unlock()
+
+	if err := ge.pubsub.PUnsubscribe(context.Background(), pattern); err != nil {
+		return fmt.Errorf("goemits: unable to unsubscribe from pattern %q: %w", pattern, err)
 	}
 	return nil
 }
@@ -293,18 +342,29 @@ func (ge *Goemits) Close() error {
 	return err
 }
 
-// dispatch delivers the message to the registered handlers. Handler
-// slices are copied under the lock, so handlers may call On, Emit and
-// friends safely. A panic inside a handler is recovered and logged.
+// dispatch delivers the message to the registered handlers. Redis
+// delivers one message per subscription kind: a message for exact
+// subscriptions and a message per matching pattern. Handler slices are
+// copied under the lock, so handlers may call On, Emit and friends
+// safely. A panic inside a handler is recovered and logged.
 func (ge *Goemits) dispatch(msg *redis.Message) {
 	ge.m.RLock()
-	handlers := ge.handlers[msg.Channel]
+	var handlers []handlerFunc
+	var patternHandlers []patternHandlerFunc
+	if msg.Pattern != "" {
+		patternHandlers = ge.patternHandlers[msg.Pattern]
+	} else {
+		handlers = ge.handlers[msg.Channel]
+	}
 	anyHandlers := ge.anyHandlers
 	ge.m.RUnlock()
 
 	payload := msg.Payload
 	for _, h := range handlers {
 		ge.safeCall(msg.Channel, func() { h(payload) })
+	}
+	for _, h := range patternHandlers {
+		ge.safeCall(msg.Channel, func() { h(msg.Channel, payload) })
 	}
 	for _, h := range anyHandlers {
 		ge.safeCall(msg.Channel, func() { h(msg.Channel, payload) })
