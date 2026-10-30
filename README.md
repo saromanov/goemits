@@ -21,6 +21,8 @@ small, Go-idiomatic API:
 - `OnReliable` and `EmitReliable` provide at-least-once delivery backed
   by Redis Streams: messages survive offline subscribers, crashes are
   recovered by reclaiming unacknowledged messages.
+- `OnTyped` and `OnReliableTyped` decode payloads into Go values with
+  generics — handlers work with real structs, not type assertions.
 - `Emit` publishes a message; payloads are encoded with a pluggable codec
   (JSON by default), so events are consumable from any language.
 - Contexts are first-class: publish with cancellation, stop the delivery
@@ -89,6 +91,25 @@ func main() {
 	}
 }
 ```
+
+## Typed handlers
+
+`OnTyped` and `OnReliableTyped` decode the payload into a Go value with
+the emitter's codec, so handlers work with real values:
+
+```go
+type user struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+err = goemits.OnTyped(ge, "user:created", func(u user) {
+	fmt.Println("new user:", u.Name)
+})
+```
+
+Events that fail to decode are logged and skipped. The default
+`JSONCodec` supports typed handlers; `RawCodec` does not.
 
 ## Reliable delivery
 
